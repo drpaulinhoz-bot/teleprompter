@@ -57,6 +57,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 #play { height: 58px; font-size: 20px; flex-shrink: 0; }
 
 #read { position: fixed; inset: 0; background: var(--bg); font-size: var(--fs); }
+#stage { position: fixed; inset: 0; }
+.mirror #stage { transform: scaleX(-1); } /* para o vidro do teleprompter */
 #scroller { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 #scroller::-webkit-scrollbar { display: none; }
 #text {
@@ -67,7 +69,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 }
 /* linhas já lidas escurecem; seta ciano marca a linha da vez */
 #read::before {
-  content: ""; position: fixed; inset: 0 0 auto; height: 30vh; pointer-events: none;
+  content: ""; position: fixed; inset: 0 0 auto; height: 30vh; pointer-events: none; z-index: 1;
   background: linear-gradient(var(--bg) 10%, rgba(0,0,0,.55));
 }
 #guide {
@@ -112,13 +114,16 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
     <input id="sp" type="range" min="1" max="10" step="1" value="4">
   </label>
   <label class="check"><input id="split" type="checkbox" checked> Uma frase por linha</label>
+  <label class="check"><input id="mirror" type="checkbox" checked> Espelhar texto (para o vidro)</label>
   <button id="play" class="primary">▶ Play</button>
 </main>
 
 <section id="read" hidden>
-  <div id="scroller"><p id="text"></p></div>
-  <div id="guide"></div>
-  <div id="count" hidden></div>
+  <div id="stage">
+    <div id="scroller"><p id="text"></p></div>
+    <div id="guide"></div>
+    <div id="count" hidden></div>
+  </div>
   <div id="bar" hidden>
     <div class="steppers">
       <div class="step"><span>Letra</span><button data-fs="-4" aria-label="Diminuir letra">−</button><b id="fsv2">44</b><button data-fs="4" aria-label="Aumentar letra">+</button></div>
@@ -202,6 +207,7 @@ $('play').onclick = () => {
   const t = clean($('src').value);
   if (!t) return $('src').focus();
   $('text').textContent = t;
+  $('read').classList.toggle('mirror', $('mirror').checked);
   $('edit').hidden = true; $('read').hidden = false;
   keepAwake();
   fromTop();
