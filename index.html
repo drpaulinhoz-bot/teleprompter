@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Teleprompter">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-512.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Teleprompter Zampiva</title>
+<style>
+/* Layout: tela de colar texto -> tela preta de leitura com faixa-guia no terço superior */
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --muted: #8b9a9e;
+  --line: #1a2b2f;
+  --panel: #0b1517;
+  --accent: #00e0ff;
+  --ink: #00161a;
+  --font: Arial, Helvetica, sans-serif;
+  --fs: 44px;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); overflow: hidden; }
+button { font-family: var(--font); cursor: pointer; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#edit {
+  height: 100%; box-sizing: border-box; max-width: 720px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1 { margin: 0; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+textarea {
+  flex: 1; min-height: 0; resize: none; box-sizing: border-box; width: 100%;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px; font: 18px/1.45 var(--font);
+}
+textarea::placeholder { color: var(--muted); }
+.field { display: grid; gap: 6px; }
+.field .row { display: flex; justify-content: space-between; font-size: 15px; color: var(--muted); }
+.field output { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; margin: 0; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.primary { background: var(--accent); color: var(--ink); border: 0; border-radius: 14px; font-weight: 700; }
+#play { height: 58px; font-size: 20px; flex-shrink: 0; }
+
+#read { position: fixed; inset: 0; background: var(--bg); font-size: var(--fs); }
+#scroller { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+#scroller::-webkit-scrollbar { display: none; }
+#text {
+  white-space: pre-wrap; overflow-wrap: break-word; line-height: 1.3; margin: 0;
+  padding-top: 30vh; padding-bottom: 75vh;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+}
+/* linhas já lidas escurecem; seta ciano marca a linha da vez */
+#read::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: 30vh; pointer-events: none;
+  background: linear-gradient(var(--bg) 10%, rgba(0,0,0,.55));
+}
+#guide {
+  position: fixed; left: max(4px, env(safe-area-inset-left, 0px)); top: 30vh; height: 1.3em;
+  display: flex; align-items: center; pointer-events: none;
+}
+#guide::before { content: ""; border: .22em solid transparent; border-left: .3em solid var(--accent); border-right: 0; }
+#count {
+  position: fixed; inset: 0; display: grid; place-content: center; text-align: center;
+  background: rgba(0,0,0,.8); font-size: 34vw; font-weight: 700; color: var(--accent);
+}
+#count small { display: block; font-size: 16px; font-weight: 400; color: var(--muted); }
+
+#bar {
+  position: fixed; left: 0; right: 0; bottom: 0; font-size: 16px;
+  display: grid; gap: 12px;
+  padding-top: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: rgba(11,21,23,.94); border-top: 1px solid var(--line);
+}
+.steppers, .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions { grid-template-columns: 1fr 1fr 1.4fr; }
+.step { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 4px 4px 4px 12px; }
+.step span { color: var(--muted); font-size: 14px; }
+.step b { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
+.step button { width: 40px; height: 40px; border-radius: 9px; border: 0; background: var(--line); color: var(--fg); font-size: 22px; }
+.actions button { height: 50px; border-radius: 12px; font-size: 16px; }
+.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+</style>
+
+<main id="edit">
+  <h1>Teleprompter</h1>
+  <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Nada fica salvo."></textarea>
+  <label class="field">
+    <span class="row">Tamanho da letra <output id="fsv">44</output></span>
+    <input id="fs" type="range" min="24" max="120" step="2" value="44">
+  </label>
+  <label class="field">
+    <span class="row">Velocidade <output id="spv">4</output></span>
+    <input id="sp" type="range" min="1" max="10" step="1" value="4">
+  </label>
+  <label class="check"><input id="split" type="checkbox" checked> Uma frase por linha</label>
+  <button id="play" class="primary">▶ Play</button>
+</main>
+
+<section id="read" hidden>
+  <div id="scroller"><p id="text"></p></div>
+  <div id="guide"></div>
+  <div id="count" hidden></div>
+  <div id="bar" hidden>
+    <div class="steppers">
+      <div class="step"><span>Letra</span><button data-fs="-4" aria-label="Diminuir letra">−</button><b id="fsv2">44</b><button data-fs="4" aria-label="Aumentar letra">+</button></div>
+      <div class="step"><span>Veloc.</span><button data-sp="-1" aria-label="Diminuir velocidade">−</button><b id="spv2">4</b><button data-sp="1" aria-label="Aumentar velocidade">+</button></div>
+    </div>
+    <div class="actions">
+      <button id="back" class="ghost">Editar</button>
+      <button id="restart" class="ghost">Do início</button>
+      <button id="resume" class="primary">▶ Continuar</button>
+    </div>
+  </div>
+</section>
+
+<video id="nosleep" muted playsinline loop style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none" src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAAs1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQ=="></video>
+
+<script>
+const $ = id => document.getElementById(id);
+const sc = $('scroller');
+let fs = 44, speed = 4, pos = 0, playing = false, counting = false, last = 0, lock = null;
+
+// limpa símbolos de formatação (*, #) e quebra uma frase por linha
+function clean(t) {
+  t = t.replace(/[*#_`>]+/g, '').replace(/^[ \t]+|[ \t]+$/gm, '').trim();
+  if ($('split').checked) t = t.replace(/(?<!\b(?:Dr|Dra|Sr|Sra|Prof))([.!?…])[ \t]+/g, '$1\n');
+  return t;
+}
+
+function setFs(v) {
+  const ratio = sc.scrollHeight ? pos / sc.scrollHeight : 0;
+  fs = Math.min(120, Math.max(24, v));
+  document.documentElement.style.setProperty('--fs', fs + 'px');
+  $('fs').value = fs; $('fsv').textContent = $('fsv2').textContent = fs;
+  if (!$('read').hidden) { pos = ratio * sc.scrollHeight; sc.scrollTop = pos; }
+}
+function setSpeed(v) {
+  speed = Math.min(10, Math.max(1, v));
+  $('sp').value = speed; $('spv').textContent = $('spv2').textContent = speed;
+}
+
+async function keepAwake() {
+  $('nosleep').play().catch(() => {});
+  try { lock = await navigator.wakeLock.request('screen'); } catch {}
+}
+function release() {
+  $('nosleep').pause();
+  if (lock) lock.release().catch(() => {});
+  lock = null;
+}
+
+function tick(t) {
+  if (!playing) return;
+  const dt = Math.min((t - last) / 1000, 0.1);
+  last = t;
+  pos += speed * 0.2 * fs * 1.3 * dt; // velocidade 1 = 0,2 linha/s ... 10 = 2 linhas/s
+  const max = sc.scrollHeight - sc.clientHeight;
+  if (pos >= max) { pos = max; sc.scrollTop = pos; return pause(); }
+  sc.scrollTop = pos;
+  requestAnimationFrame(tick);
+}
+function start() {
+  playing = true; $('bar').hidden = true;
+  last = performance.now();
+  requestAnimationFrame(tick);
+}
+function pause() { playing = false; $('bar').hidden = false; }
+
+function countdown() {
+  counting = true; $('bar').hidden = true;
+  const box = $('count');
+  let n = 3;
+  const show = () => { box.innerHTML = n + '<small>Toque na tela para pausar</small>'; };
+  box.hidden = false; show();
+  const id = setInterval(() => {
+    if (--n > 0) return show();
+    clearInterval(id); box.hidden = true; counting = false; start();
+  }, 1000);
+}
+function fromTop() { pos = 0; sc.scrollTop = 0; countdown(); }
+
+$('play').onclick = () => {
+  const t = clean($('src').value);
+  if (!t) return $('src').focus();
+  $('text').textContent = t;
+  $('edit').hidden = true; $('read').hidden = false;
+  keepAwake();
+  fromTop();
+};
+sc.onclick = () => { if (!counting) playing ? pause() : start(); };
+sc.onscroll = () => { if (!playing) pos = sc.scrollTop; };
+$('resume').onclick = start;
+$('restart').onclick = fromTop;
+$('back').onclick = () => { pause(); release(); $('read').hidden = true; $('edit').hidden = false; };
+$('fs').oninput = e => setFs(+e.target.value);
+$('sp').oninput = e => setSpeed(+e.target.value);
+document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => setFs(fs + +b.dataset.fs));
+document.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => setSpeed(speed + +b.dataset.sp));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !$('read').hidden) keepAwake();
+});
+</script>
