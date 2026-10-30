@@ -143,6 +143,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 const $ = id => document.getElementById(id);
 const sc = $('scroller');
 let fs = 44, speed = 4, pos = 0, playing = false, counting = false, last = 0, lock = null;
+let touching = false, userUntil = 0, written = 0;
 
 // limpa símbolos de formatação (*, #) e quebra uma frase por linha
 function clean(t) {
@@ -177,10 +178,13 @@ function tick(t) {
   if (!playing) return;
   const dt = Math.min((t - last) / 1000, 0.1);
   last = t;
-  pos += speed * 0.2 * fs * 1.3 * dt; // velocidade 1 = 0,2 linha/s ... 10 = 2 linhas/s
-  const max = sc.scrollHeight - sc.clientHeight;
-  if (pos >= max) { pos = max; sc.scrollTop = pos; return pause(); }
-  sc.scrollTop = pos;
+  // dedo na tela (ou rolagem ainda deslizando): obedece o dedo; soltou, segue de onde parou
+  if (!touching && t > userUntil) {
+    pos += speed * 0.2 * fs * 1.3 * dt; // velocidade 1 = 0,2 linha/s ... 10 = 2 linhas/s
+    const max = sc.scrollHeight - sc.clientHeight;
+    if (pos >= max) { pos = max; sc.scrollTop = pos; return pause(); }
+    sc.scrollTop = pos; written = sc.scrollTop;
+  }
   requestAnimationFrame(tick);
 }
 // espelha só enquanto passa (contagem + play); pausado volta ao normal
@@ -214,7 +218,12 @@ $('play').onclick = () => {
   fromTop();
 };
 sc.onclick = () => { if (!counting) playing ? pause() : start(); };
-sc.onscroll = () => { if (!playing) pos = sc.scrollTop; };
+sc.onscroll = () => {
+  if (!playing || touching || Math.abs(sc.scrollTop - written) > 2) { pos = sc.scrollTop; userUntil = performance.now() + 250; }
+};
+sc.addEventListener('touchstart', () => { touching = true; }, { passive: true });
+sc.addEventListener('touchend', () => { touching = false; }, { passive: true });
+sc.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
 $('resume').onclick = start;
 $('restart').onclick = fromTop;
 $('back').onclick = () => { pause(); release(); $('read').hidden = true; $('edit').hidden = false; };
