@@ -183,15 +183,17 @@ function tick(t) {
   sc.scrollTop = pos;
   requestAnimationFrame(tick);
 }
+// espelha só enquanto passa (contagem + play); pausado volta ao normal
+const mirror = on => $('read').classList.toggle('mirror', on && $('mirror').checked);
 function start() {
-  playing = true; $('bar').hidden = true;
+  playing = true; $('bar').hidden = true; mirror(true);
   last = performance.now();
   requestAnimationFrame(tick);
 }
-function pause() { playing = false; $('bar').hidden = false; }
+function pause() { playing = false; $('bar').hidden = false; mirror(false); }
 
 function countdown() {
-  counting = true; $('bar').hidden = true;
+  counting = true; $('bar').hidden = true; mirror(true);
   const box = $('count');
   let n = 3;
   const show = () => { box.innerHTML = n + '<small>Toque na tela para pausar</small>'; };
@@ -207,7 +209,6 @@ $('play').onclick = () => {
   const t = clean($('src').value);
   if (!t) return $('src').focus();
   $('text').textContent = t;
-  $('read').classList.toggle('mirror', $('mirror').checked);
   $('edit').hidden = true; $('read').hidden = false;
   keepAwake();
   fromTop();
