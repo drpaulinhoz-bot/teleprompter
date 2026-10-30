@@ -104,7 +104,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 
 <main id="edit">
   <h1>Teleprompter</h1>
-  <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Nada fica salvo."></textarea>
+  <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Os enters do começo viram espaço em branco antes do texto.&#10;&#10;O texto não fica salvo."></textarea>
   <label class="field">
     <span class="row">Tamanho da letra <output id="fsv">44</output></span>
     <input id="fs" type="range" min="24" max="120" step="2" value="44">
@@ -112,6 +112,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
   <label class="field">
     <span class="row">Velocidade <output id="spv">4</output></span>
     <input id="sp" type="range" min="1" max="10" step="1" value="4">
+  </label>
+  <label class="field">
+    <span class="row">Espera antes de começar <output id="waitv">20 s</output></span>
+    <input id="wait" type="range" min="0" max="60" step="5" value="20">
   </label>
   <label class="check"><input id="split" type="checkbox" checked> Uma frase por linha</label>
   <label class="check"><input id="mirror" type="checkbox" checked> Espelhar texto (para o vidro)</label>
@@ -143,11 +147,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 const $ = id => document.getElementById(id);
 const sc = $('scroller');
 let fs = 44, speed = 4, pos = 0, playing = false, counting = false, last = 0, lock = null;
-let touching = false, userUntil = 0, written = 0;
+let touching = false, userUntil = 0, written = 0, wait = 20, cd = 0;
 
-// limpa símbolos de formatação (*, #) e quebra uma frase por linha
+// limpa símbolos de formatação (*, #) e quebra uma frase por linha; enters do começo ficam
 function clean(t) {
-  t = t.replace(/[*#_`>]+/g, '').replace(/^[ \t]+|[ \t]+$/gm, '').trim();
+  t = t.replace(/[*#_`>]+/g, '').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\s+$/, '');
   if ($('split').checked) t = t.replace(/(?<!\b(?:Dr|Dra|Sr|Sra|Prof))([.!?…])[ \t]+/g, '$1\n');
   return t;
 }
@@ -158,10 +162,33 @@ function setFs(v) {
   document.documentElement.style.setProperty('--fs', fs + 'px');
   $('fs').value = fs; $('fsv').textContent = $('fsv2').textContent = fs;
   if (!$('read').hidden) { pos = ratio * sc.scrollHeight; sc.scrollTop = pos; }
+  save();
 }
 function setSpeed(v) {
   speed = Math.min(10, Math.max(1, v));
   $('sp').value = speed; $('spv').textContent = $('spv2').textContent = speed;
+  save();
+}
+function setWait(v) {
+  wait = Math.min(60, Math.max(0, v));
+  $('wait').value = wait; $('waitv').textContent = wait + ' s';
+  save();
+}
+
+// lembra só os ajustes neste celular; o texto nunca é guardado
+const KEY = 'teleprompter-ajustes';
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify({ fs, speed, wait, split: $('split').checked, mirror: $('mirror').checked })); } catch {}
+}
+function load() {
+  try {
+    const a = JSON.parse(localStorage.getItem(KEY)) || {};
+    if (a.split != null) $('split').checked = a.split;
+    if (a.mirror != null) $('mirror').checked = a.mirror;
+    if (a.fs) setFs(a.fs);
+    if (a.speed) setSpeed(a.speed);
+    if (a.wait != null) setWait(a.wait);
+  } catch {}
 }
 
 async function keepAwake() {
@@ -196,22 +223,23 @@ function start() {
 }
 function pause() { playing = false; $('bar').hidden = false; mirror(false); }
 
+// espera ajustável antes de começar (tempo de dar a volta e ligar a câmera)
 function countdown() {
   counting = true; $('bar').hidden = true; mirror(true);
+  let n = wait;
+  if (n <= 0) return go();
   const box = $('count');
-  let n = 3;
-  const show = () => { box.innerHTML = n + '<small>Toque na tela para pausar</small>'; };
+  const show = () => { box.innerHTML = n + '<small>Toque para cancelar</small>'; };
   box.hidden = false; show();
-  const id = setInterval(() => {
-    if (--n > 0) return show();
-    clearInterval(id); box.hidden = true; counting = false; start();
-  }, 1000);
+  cd = setInterval(() => { if (--n > 0) show(); else go(); }, 1000);
 }
+function stopCount() { clearInterval(cd); $('count').hidden = true; counting = false; }
+function go() { stopCount(); start(); }
 function fromTop() { pos = 0; sc.scrollTop = 0; countdown(); }
 
 $('play').onclick = () => {
   const t = clean($('src').value);
-  if (!t) return $('src').focus();
+  if (!t.trim()) return $('src').focus();
   $('text').textContent = t;
   $('edit').hidden = true; $('read').hidden = false;
   keepAwake();
@@ -224,14 +252,18 @@ sc.onscroll = () => {
 sc.addEventListener('touchstart', () => { touching = true; }, { passive: true });
 sc.addEventListener('touchend', () => { touching = false; }, { passive: true });
 sc.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
-$('resume').onclick = start;
+$('resume').onclick = countdown;
+$('count').onclick = () => { stopCount(); pause(); };
 $('restart').onclick = fromTop;
 $('back').onclick = () => { pause(); release(); $('read').hidden = true; $('edit').hidden = false; };
 $('fs').oninput = e => setFs(+e.target.value);
 $('sp').oninput = e => setSpeed(+e.target.value);
+$('wait').oninput = e => setWait(+e.target.value);
+$('split').onchange = $('mirror').onchange = save;
 document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => setFs(fs + +b.dataset.fs));
 document.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => setSpeed(speed + +b.dataset.sp));
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !$('read').hidden) keepAwake();
 });
+load();
 </script>
