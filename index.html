@@ -100,6 +100,30 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 .step button { width: 40px; height: 40px; border-radius: 9px; border: 0; background: var(--line); color: var(--fg); font-size: 22px; }
 .actions button { height: 50px; border-radius: 12px; font-size: 16px; }
 .ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+
+/* modo stories: câmera da frente atrás, texto no alto perto da lente */
+#camBtn { height: 54px; font-size: 18px; flex-shrink: 0; border-radius: 14px; }
+#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.cam::before { display: none; }
+.cam #stage { inset: 0 0 auto; height: 42vh; }
+.cam #scroller { background: linear-gradient(rgba(0,0,0,.65), rgba(0,0,0,.4) 75%, transparent); }
+.cam #text { padding-top: calc(env(safe-area-inset-top, 0px) + 6vh); padding-bottom: 42vh; text-shadow: 0 2px 6px #000; }
+.cam #guide { top: calc(env(safe-area-inset-top, 0px) + 6vh); }
+#recbar {
+  position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 14px; align-items: center;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+#recbar button { height: 56px; border-radius: 28px; font-size: 18px; font-weight: 700; padding: 0 24px; border: 0; }
+#recGo, #recStop { background: #e5243b; color: #fff; }
+#recBack { background: rgba(0,0,0,.55); color: #fff; border: 1px solid rgba(255,255,255,.3) !important; }
+#recDot { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 16px; z-index: 2; color: #fff; font-size: 15px; font-weight: 700; background: #e5243b; border-radius: 99px; padding: 4px 10px; }
+#done {
+  position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; gap: 12px;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+#done video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; border-radius: 12px; }
+#done button { height: 54px; border-radius: 14px; font-size: 18px; }
+#done p { margin: 0; color: var(--muted); font-size: 15px; text-align: center; }
 </style>
 
 <main id="edit">
@@ -119,10 +143,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
   </label>
   <label class="check"><input id="split" type="checkbox" checked> Uma frase por linha</label>
   <label class="check"><input id="mirror" type="checkbox" checked> Espelhar texto (para o vidro)</label>
-  <button id="play" class="primary">▶ Play</button>
+  <button id="play" class="primary">▶ Play (projeção)</button>
+  <button id="camBtn" class="ghost">● Gravar stories (câmera da frente)</button>
 </main>
 
 <section id="read" hidden>
+  <video id="cam" muted playsinline autoplay hidden></video>
   <div id="stage">
     <div id="scroller"><p id="text"></p></div>
     <div id="guide"></div>
@@ -139,6 +165,20 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
       <button id="resume" class="primary">▶ Continuar</button>
     </div>
   </div>
+  <div id="recbar" hidden>
+    <button id="recBack">Voltar</button>
+    <button id="recGo">● Gravar</button>
+    <button id="recStop" hidden>■ Parar</button>
+  </div>
+  <div id="recDot" hidden>● GRAVANDO</div>
+</section>
+
+<section id="done" hidden>
+  <video id="take" controls playsinline></video>
+  <p>Toque em "Salvar no Fotos" e depois em "Salvar vídeo".</p>
+  <button id="saveBtn" class="primary">Salvar no Fotos</button>
+  <button id="again" class="ghost">Gravar de novo</button>
+  <button id="toText" class="ghost">Voltar ao texto</button>
 </section>
 
 <video id="nosleep" muted playsinline loop style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none" src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAAs1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQ=="></video>
@@ -221,12 +261,13 @@ function start() {
   last = performance.now();
   requestAnimationFrame(tick);
 }
-function pause() { playing = false; $('bar').hidden = false; mirror(false); }
+// no modo stories a barra de projeção nunca aparece (o botão Parar fica sempre à mão)
+function pause() { playing = false; $('bar').hidden = cam; mirror(false); }
 
 // espera ajustável antes de começar (tempo de dar a volta e ligar a câmera)
 function countdown() {
   counting = true; $('bar').hidden = true; mirror(true);
-  let n = wait;
+  let n = cam ? 3 : wait; // stories: celular na mão, 3 s bastam
   if (n <= 0) return go();
   const box = $('count');
   const show = () => { box.innerHTML = n + '<small>Toque para cancelar</small>'; };
@@ -234,7 +275,7 @@ function countdown() {
   cd = setInterval(() => { if (--n > 0) show(); else go(); }, 1000);
 }
 function stopCount() { clearInterval(cd); $('count').hidden = true; counting = false; }
-function go() { stopCount(); start(); }
+function go() { stopCount(); if (cam) recStart(); start(); }
 function fromTop() { pos = 0; sc.scrollTop = 0; countdown(); }
 
 $('play').onclick = () => {
@@ -245,7 +286,93 @@ $('play').onclick = () => {
   keepAwake();
   fromTop();
 };
-sc.onclick = () => { if (!counting) playing ? pause() : start(); };
+sc.onclick = () => { if (!counting && (!cam || rec)) playing ? pause() : start(); };
+
+// ===== modo stories: câmera da frente + gravação + salvar no Fotos =====
+let cam = false, stream = null, rec = null, chunks = [], take = null;
+const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+
+async function camOpen() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (e) {
+    alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar.');
+    return false;
+  }
+  $('cam').srcObject = stream; $('cam').hidden = false;
+  return true;
+}
+function camClose() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; $('cam').srcObject = null; $('cam').hidden = true;
+}
+function recReady() { // texto no começo, câmera ligada, esperando o "Gravar"
+  playing = false; stopCount(); pos = 0; sc.scrollTop = 0;
+  $('read').classList.add('cam'); $('bar').hidden = true;
+  $('recbar').hidden = false; $('recGo').hidden = false; $('recBack').hidden = false; $('recStop').hidden = true;
+}
+function recStart() {
+  chunks = [];
+  rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = recDone;
+  rec.start(1000);
+  $('recDot').hidden = false; $('recStop').hidden = false;
+}
+function recDone() {
+  const type = rec.mimeType || mime || 'video/mp4';
+  const ext = type.includes('mp4') ? 'mp4' : 'webm';
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  take = new File(chunks, `stories-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`, { type });
+  rec = null; chunks = [];
+  camClose();
+  $('read').hidden = true; $('done').hidden = false;
+  $('take').src = URL.createObjectURL(take);
+}
+async function saveTake() {
+  if (!take) return;
+  // iPhone: abre o menu de compartilhar; "Salvar vídeo" manda direto para o Fotos
+  if (navigator.canShare && navigator.canShare({ files: [take] })) {
+    try { await navigator.share({ files: [take] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); // computador / Android sem menu: baixa o arquivo
+  a.href = $('take').src; a.download = take.name; a.click();
+}
+function leaveDone() {
+  if ($('take').src) URL.revokeObjectURL($('take').src);
+  $('take').removeAttribute('src'); take = null; $('done').hidden = true;
+}
+
+$('camBtn').onclick = async () => {
+  const t = clean($('src').value);
+  if (!t.trim()) return $('src').focus();
+  if (!mime && !window.MediaRecorder) return alert('Este navegador não grava vídeo. Abra o link no Safari.');
+  $('text').textContent = t;
+  cam = true; mirror(false);
+  $('edit').hidden = true; $('read').hidden = false;
+  if (!(await camOpen())) { cam = false; $('read').hidden = true; $('edit').hidden = false; return; }
+  keepAwake(); recReady();
+};
+$('recGo').onclick = () => { $('recGo').hidden = true; $('recBack').hidden = true; countdown(); };
+$('recStop').onclick = () => {
+  playing = false; stopCount();
+  $('recbar').hidden = true; $('recDot').hidden = true;
+  if (rec && rec.state !== 'inactive') rec.stop(); else { recReady(); $('recbar').hidden = false; }
+};
+$('recBack').onclick = () => {
+  camClose(); release(); cam = false;
+  $('read').classList.remove('cam'); $('recbar').hidden = true;
+  $('read').hidden = true; $('edit').hidden = false;
+};
+$('saveBtn').onclick = saveTake;
+$('again').onclick = async () => {
+  leaveDone(); $('read').hidden = false;
+  if (await camOpen()) recReady(); else $('recBack').onclick();
+};
+$('toText').onclick = () => { leaveDone(); $('recBack').onclick(); };
 sc.onscroll = () => {
   if (!playing || touching || Math.abs(sc.scrollTop - written) > 2) { pos = sc.scrollTop; userUntil = performance.now() + 250; }
 };
@@ -253,7 +380,7 @@ sc.addEventListener('touchstart', () => { touching = true; }, { passive: true })
 sc.addEventListener('touchend', () => { touching = false; }, { passive: true });
 sc.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
 $('resume').onclick = countdown;
-$('count').onclick = () => { stopCount(); pause(); };
+$('count').onclick = () => { stopCount(); pause(); if (cam && !rec) recReady(); };
 $('restart').onclick = fromTop;
 $('back').onclick = () => { pause(); release(); $('read').hidden = true; $('edit').hidden = false; };
 $('fs').oninput = e => setFs(+e.target.value);
