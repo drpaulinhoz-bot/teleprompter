@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Roteiros Alinne">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-512.png">
+<link rel="manifest" href="alinne.webmanifest">
+<title>Teleprompter Alinne</title>
+<style>
+/* Layout: tela de colar texto -> tela preta de leitura com faixa-guia no terço superior */
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --muted: #8b9a9e;
+  --line: #1a2b2f;
+  --panel: #0b1517;
+  --accent: #00e0ff;
+  --ink: #00161a;
+  --font: Arial, Helvetica, sans-serif;
+  --fs: 44px;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); overflow: hidden; }
+button { font-family: var(--font); cursor: pointer; }
+button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#edit {
+  height: 100%; box-sizing: border-box; max-width: 720px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1 { margin: 0; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+textarea {
+  flex: 1; min-height: 0; resize: none; box-sizing: border-box; width: 100%;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px; font: 18px/1.45 var(--font);
+}
+textarea::placeholder { color: var(--muted); }
+.field { display: grid; gap: 6px; }
+.field .row { display: flex; justify-content: space-between; font-size: 15px; color: var(--muted); }
+.field output { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; margin: 0; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.primary { background: var(--accent); color: var(--ink); border: 0; border-radius: 14px; font-weight: 700; }
+#play { height: 58px; font-size: 20px; flex-shrink: 0; }
+
+#read { position: fixed; inset: 0; background: var(--bg); font-size: var(--fs); }
+#stage { position: fixed; inset: 0; }
+.mirror #stage { transform: scaleX(-1); } /* para o vidro do teleprompter */
+#scroller { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+#scroller::-webkit-scrollbar { display: none; }
+#text {
+  white-space: pre-wrap; overflow-wrap: break-word; line-height: 1.3; margin: 0;
+  padding-top: 30vh; padding-bottom: 75vh;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+}
+/* linhas já lidas escurecem; seta ciano marca a linha da vez */
+#read::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: 30vh; pointer-events: none; z-index: 1;
+  background: linear-gradient(var(--bg) 10%, rgba(0,0,0,.55));
+}
+#guide {
+  position: fixed; left: max(4px, env(safe-area-inset-left, 0px)); top: 30vh; height: 1.3em;
+  display: flex; align-items: center; pointer-events: none;
+}
+#guide::before { content: ""; border: .22em solid transparent; border-left: .3em solid var(--accent); border-right: 0; }
+#count {
+  position: fixed; inset: 0; display: grid; place-content: center; text-align: center;
+  background: rgba(0,0,0,.8); font-size: 34vw; font-weight: 700; color: var(--accent);
+}
+#count small { display: block; font-size: 16px; font-weight: 400; color: var(--muted); }
+
+#bar {
+  position: fixed; left: 0; right: 0; bottom: 0; font-size: 16px;
+  display: grid; gap: 12px;
+  padding-top: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: rgba(11,21,23,.94); border-top: 1px solid var(--line);
+}
+.steppers, .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions { grid-template-columns: 1fr 1fr 1.4fr; }
+.step { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 4px 4px 4px 12px; }
+.step span { color: var(--muted); font-size: 14px; }
+.step b { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
+.step button { width: 40px; height: 40px; border-radius: 9px; border: 0; background: var(--line); color: var(--fg); font-size: 22px; }
+.actions button { height: 50px; border-radius: 12px; font-size: 16px; }
+.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+
+/* modo stories: câmera da frente atrás, texto no alto perto da lente */
+#camBtn { height: 54px; font-size: 18px; flex-shrink: 0; border-radius: 14px; }
+#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.cam::before { display: none; }
+.cam #stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.recording #stage { pointer-events: none; touch-action: none; }
+.cam #stage { inset: 0 0 auto; height: 42vh; }
+.cam #scroller { background: linear-gradient(rgba(0,0,0,.78), rgba(0,0,0,.6) 70%, rgba(0,0,0,0)); }
+.cam #text { padding-top: calc(env(safe-area-inset-top, 0px) + 6vh); padding-bottom: 42vh; text-shadow: 0 0 3px #000, 0 2px 8px #000; }
+.cam #guide { top: calc(env(safe-area-inset-top, 0px) + 6vh); }
+#recbar {
+  position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 40px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(transparent, rgba(0,0,0,.6) 45%);
+}
+#recbar button { height: 48px; border-radius: 24px; font-size: 17px; font-weight: 700; border: 1px solid rgba(255,255,255,.4); background: rgba(0,0,0,.6); color: #fff; }
+#recBack { grid-row: 1; grid-column: 1; }
+#recFrom { grid-row: 1; grid-column: 2; }
+#recGo, #recStop { grid-column: 1 / -1; grid-row: 2; height: 72px; border-radius: 36px; font-size: 22px; letter-spacing: .04em; background: #e5243b; border: 0; }
+#recDot { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%); z-index: 3; color: #fff; font-size: 17px; font-weight: 700; background: #e5243b; border-radius: 99px; padding: 6px 14px; box-shadow: 0 2px 8px rgba(0,0,0,.6); }
+#done {
+  position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; gap: 12px;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+#done .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; }
+#done h2 { margin: 0 0 auto; padding-top: 22vh; text-align: center; font-size: 30px; }
+#done .primary { height: 72px; font-size: 21px; }
+#done .ghost { border: 1px solid #2a4046; color: #cfe9ee; }
+#done #review p { font-size: 17px; color: #fff; }
+#review .ghost, #ready .ghost { height: 48px; font-size: 16px; }
+#review video { max-height: 52vh; }
+#ready #next { background: #e5243b; color: #fff; }
+#done #busy p { font-size: 18px; color: #cfe9ee; }
+#done progress { width: 100%; height: 14px; accent-color: var(--accent); }
+#busy h2 { margin: auto 0 0; padding: 0; }
+#busy p { margin-bottom: auto; }
+#done video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; border-radius: 12px; }
+#done button { height: 54px; border-radius: 14px; font-size: 18px; }
+#done p { margin: 0; color: var(--muted); font-size: 15px; text-align: center; }
+</style>
+
+<main id="edit">
+  <h1>Roteiros · Programa Desinflame</h1>
+  <label class="field"><span class="row">Escolha o roteiro</span>
+  <select id="rot" aria-label="Escolha o roteiro" style="width:100%;font-size:17px;padding:12px;border-radius:12px;background:#111;color:#fff;border:1px solid #333"></select></label>
+  <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Os enters do começo viram espaço em branco antes do texto.&#10;&#10;O texto não fica salvo."></textarea>
+  <label class="field">
+    <span class="row">Tamanho da letra <output id="fsv">44</output></span>
+    <input id="fs" type="range" min="24" max="120" step="2" value="44">
+  </label>
+  <label class="field">
+    <span class="row">Velocidade <output id="spv">4</output></span>
+    <input id="sp" type="range" min="1" max="10" step="1" value="4">
+  </label>
+  <label class="field">
+    <span class="row">Espera antes de começar <output id="waitv">20 s</output></span>
+    <input id="wait" type="range" min="0" max="60" step="5" value="20">
+  </label>
+  <label class="check"><input id="split" type="checkbox" checked> Uma frase por linha</label>
+  <label class="check"><input id="mirror" type="checkbox"> Espelhar texto (para o vidro)</label>
+  <button id="play" class="primary">▶ Play (projeção)</button>
+  <button id="camBtn" class="ghost">● Gravar stories (câmera da frente)</button>
+</main>
+
+<section id="read" hidden>
+  <video id="cam" muted playsinline autoplay hidden></video>
+  <div id="stage">
+    <div id="scroller"><p id="text"></p></div>
+    <div id="guide"></div>
+    <div id="count" hidden></div>
+  </div>
+  <div id="bar" hidden>
+    <div class="steppers">
+      <div class="step"><span>Letra</span><button data-fs="-4" aria-label="Diminuir letra">−</button><b id="fsv2">44</b><button data-fs="4" aria-label="Aumentar letra">+</button></div>
+      <div class="step"><span>Veloc.</span><button data-sp="-1" aria-label="Diminuir velocidade">−</button><b id="spv2">4</b><button data-sp="1" aria-label="Aumentar velocidade">+</button></div>
+    </div>
+    <div class="actions">
+      <button id="back" class="ghost">Editar</button>
+      <button id="restart" class="ghost">Do início</button>
+      <button id="resume" class="primary">▶ Continuar</button>
+    </div>
+  </div>
+  <div id="recbar" hidden>
+    <button id="recBack">Voltar</button>
+    <button id="recFrom" hidden>Do início</button>
+    <button id="recGo">● GRAVAR</button>
+    <button id="recStop" hidden>■ PARAR</button>
+  </div>
+  <div id="recDot" hidden>● Gravando</div>
+</section>
+
+<section id="done" hidden>
+  <div id="ask" class="pane">
+    <h2>Ficou bom?</h2>
+    <button id="redo" class="ghost">↺ Não, gravar de novo</button>
+    <button id="watch" class="ghost">▶ Assistir antes</button>
+    <button id="saveAll" class="primary">✓ Sim, salvar no Fotos</button>
+  </div>
+  <div id="review" class="pane" hidden>
+    <video id="take" controls playsinline></video>
+    <p>Pause no ponto do erro e toque em Cortar.</p>
+    <button id="redo2" class="ghost">↺ Apagar e gravar de novo</button>
+    <button id="saveWhole" class="ghost">Salvar tudo, sem cortar</button>
+    <button id="cutHere" class="primary">✂ Cortar aqui e gravar o resto</button>
+  </div>
+  <div id="busy" class="pane" hidden>
+    <h2>Cortando o vídeo…</h2>
+    <progress id="prog" max="1" value="0"></progress>
+    <p>Pode levar um pouco. Não saia desta tela.</p>
+  </div>
+  <div id="ready" class="pane" hidden>
+    <h2 id="readyMsg">Vídeo pronto</h2>
+    <button id="again" class="ghost">↺ Gravar tudo de novo</button>
+    <button id="toText" class="ghost">Voltar ao texto</button>
+    <button id="next" class="primary" hidden>● Gravar o resto</button>
+    <button id="share" class="primary">Salvar no Fotos</button>
+  </div>
+</section>
+
+<video id="nosleep" muted playsinline loop style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none" src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAAs1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQ=="></video>
+
+<script>
+const $ = id => document.getElementById(id);
+const sc = $('scroller');
+let fs = 44, speed = 4, pos = 0, playing = false, counting = false, last = 0, lock = null;
+let touching = false, userUntil = 0, written = 0, wait = 20, cd = 0;
+
+// limpa símbolos de formatação (*, #) e quebra uma frase por linha; enters do começo ficam
+function clean(t) {
+  t = t.replace(/[*#_`>]+/g, '').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\s+$/, '');
+  if ($('split').checked) t = t.replace(/(?<!\b(?:Dr|Dra|Sr|Sra|Prof))([.!?…])[ \t]+/g, '$1\n');
+  return t;
+}
+
+function setFs(v) {
+  const ratio = sc.scrollHeight ? pos / sc.scrollHeight : 0;
+  fs = Math.min(120, Math.max(24, v));
+  document.documentElement.style.setProperty('--fs', fs + 'px');
+  $('fs').value = fs; $('fsv').textContent = $('fsv2').textContent = fs;
+  if (!$('read').hidden) { pos = ratio * sc.scrollHeight; sc.scrollTop = pos; }
+  save();
+}
+function setSpeed(v) {
+  speed = Math.min(10, Math.max(1, v));
+  $('sp').value = speed; $('spv').textContent = $('spv2').textContent = speed;
+  save();
+}
+function setWait(v) {
+  wait = Math.min(60, Math.max(0, v));
+  $('wait').value = wait; $('waitv').textContent = wait + ' s';
+  save();
+}
+
+// lembra só os ajustes neste celular; o texto nunca é guardado
+const KEY = 'teleprompter-alinne';
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify({ fs, speed, wait, split: $('split').checked, mirror: $('mirror').checked })); } catch {}
+}
+function load() {
+  try {
+    const a = JSON.parse(localStorage.getItem(KEY)) || {};
+    if (a.split != null) $('split').checked = a.split;
+    if (a.mirror != null) $('mirror').checked = a.mirror;
+    if (a.fs) setFs(a.fs);
+    if (a.speed) setSpeed(a.speed);
+    if (a.wait != null) setWait(a.wait);
+  } catch {}
+}
+
+async function keepAwake() {
+  $('nosleep').play().catch(() => {});
+  try { lock = await navigator.wakeLock.request('screen'); } catch {}
+}
+function release() {
+  $('nosleep').pause();
+  if (lock) lock.release().catch(() => {});
+  lock = null;
+}
+
+function tick(t) {
+  if (!playing) return;
+  const dt = Math.min((t - last) / 1000, 0.1);
+  last = t;
+  // dedo na tela (ou rolagem ainda deslizando): obedece o dedo; soltou, segue de onde parou
+  if (!touching && t > userUntil) {
+    pos += speed * 0.2 * fs * 1.3 * dt; // velocidade 1 = 0,2 linha/s ... 10 = 2 linhas/s
+    const max = sc.scrollHeight - sc.clientHeight;
+    if (pos >= max) { pos = max; sc.scrollTop = pos; return pause(); }
+    sc.scrollTop = pos; written = sc.scrollTop;
+  }
+  requestAnimationFrame(tick);
+}
+// espelha só enquanto passa (contagem + play); pausado volta ao normal
+const mirror = on => $('read').classList.toggle('mirror', on && $('mirror').checked);
+function start() {
+  playing = true; $('bar').hidden = true; mirror(true);
+  last = performance.now();
+  requestAnimationFrame(tick);
+}
+// no modo stories a barra de projeção nunca aparece (o botão Parar fica sempre à mão)
+function pause() { playing = false; $('bar').hidden = cam; mirror(false); }
+
+// espera ajustável antes de começar (tempo de dar a volta e ligar a câmera)
+function countdown() {
+  counting = true; $('bar').hidden = true; mirror(true);
+  let n = cam ? 3 : wait; // stories: celular na mão, 3 s bastam
+  if (n <= 0) return go();
+  const box = $('count');
+  const show = () => { box.innerHTML = n + '<small>Toque para cancelar</small>'; };
+  box.hidden = false; show();
+  cd = setInterval(() => { if (--n > 0) show(); else go(); }, 1000);
+}
+function stopCount() { clearInterval(cd); $('count').hidden = true; counting = false; }
+function go() { stopCount(); if (cam) recStart(); start(); }
+function fromTop() { pos = 0; sc.scrollTop = 0; countdown(); }
+
+$('play').onclick = () => {
+  const t = clean($('src').value);
+  if (!t.trim()) return $('src').focus();
+  $('text').textContent = t;
+  $('edit').hidden = true; $('read').hidden = false;
+  keepAwake();
+  fromTop();
+};
+sc.onclick = () => { if (!counting && (!cam || rec)) playing ? pause() : start(); };
+
+// ===== modo stories: câmera da frente + gravação + decidir/assistir/cortar + salvar no Fotos =====
+let cam = false, stream = null, rec = null, chunks = [], take = null, out = null;
+let marks = [], t0 = 0, part = 1, startPos = 0;
+const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+const pane = id => ['ask', 'review', 'busy', 'ready'].forEach(k => { $(k).hidden = k !== id; });
+
+const alive = () => stream && stream.getTracks().length &&
+  stream.getTracks().every(t => t.readyState === 'live' && !t.muted);
+async function camOpen() {
+  if (alive()) return true; // câmera continua ligada entre uma tomada e outra
+  camClose();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (e) {
+    alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar.');
+    return false;
+  }
+  $('cam').srcObject = stream; $('cam').hidden = false;
+  return true;
+}
+function camClose() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; $('cam').srcObject = null; $('cam').hidden = true;
+}
+// texto parado no ponto certo, câmera ligada, esperando o "Gravar"
+function recReady(at = 0) {
+  playing = false; stopCount(); pos = startPos = at; sc.scrollTop = at;
+  $('read').classList.add('cam'); $('read').classList.remove('recording'); $('bar').hidden = true;
+  $('done').hidden = true; $('read').hidden = false;
+  $('recbar').hidden = false; $('recGo').hidden = false; $('recBack').hidden = false;
+  $('recFrom').hidden = at <= 0; $('recStop').hidden = true; $('recDot').hidden = true;
+}
+function recStart() {
+  chunks = []; marks = [[0, pos]]; t0 = performance.now();
+  rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = recDone;
+  rec.start(1000);
+  $('read').classList.add('recording');
+  $('recDot').hidden = false; $('recStop').hidden = false;
+}
+// guarda onde o texto estava em cada momento do vídeo (para continuar do ponto do erro)
+setInterval(() => { if (rec && rec.state === 'recording') marks.push([(performance.now() - t0) / 1000, pos]); }, 200);
+function posAt(t) {
+  let p = marks.length ? marks[0][1] : 0;
+  for (const [s, v] of marks) { if (s <= t) p = v; else break; }
+  return Math.max(0, p - fs * 1.3); // volta uma linha para retomar a frase inteira
+}
+function fileName(ext) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `stories-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-parte${part}.${ext}`;
+}
+function recDone() {
+  const type = rec.mimeType || mime || 'video/mp4';
+  take = new File(chunks, fileName(type.includes('mp4') ? 'mp4' : 'webm'), { type });
+  rec = null; chunks = [];
+  $('read').classList.remove('recording');
+  if (!alive()) alert('A gravação foi interrompida; confira o vídeo.');
+  $('read').hidden = true; $('done').hidden = false; pane('ask');
+}
+function dropTake() {
+  if ($('take').src) URL.revokeObjectURL($('take').src);
+  $('take').removeAttribute('src'); $('take').load();
+  take = out = null;
+}
+async function share(file) {
+  // iPhone: abre o menu de compartilhar; "Salvar vídeo" manda direto para o Fotos
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); return true; } catch (e) { return false; }
+  }
+  if (/iPhone|iPad|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) { alert('Não abriu o menu. Toque em "Salvar no Fotos" de novo.'); return false; }
+  const a = document.createElement('a'); // computador / Android sem menu: baixa o arquivo
+  a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return true;
+}
+function showReady(msg, cont) {
+  $('share').hidden = false;
+  $('readyMsg').textContent = msg; $('next').hidden = !cont; pane('ready');
+}
+
+// corta do começo até "end" segundos: toca o vídeo escondido e regrava (leva o tempo do trecho)
+async function trim(file, end) {
+  const ac = new (window.AudioContext || window.webkitAudioContext)(); // criado no toque, exigência do iPhone
+  const v = document.createElement('video');
+  v.playsInline = true; v.src = URL.createObjectURL(file);
+  v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(v);
+  ac.resume();
+  const primed = v.play().catch(() => {}); // libera o som enquanto ainda é o toque
+  try {
+    await new Promise((ok, bad) => { v.onloadedmetadata = ok; v.onerror = bad; });
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    const g = c.getContext('2d');
+    const dst = ac.createMediaStreamDestination();
+    ac.createMediaElementSource(v).connect(dst);
+    const s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dst.stream.getAudioTracks()]);
+    const r = new MediaRecorder(s, mime ? { mimeType: mime } : undefined), ch = [];
+    r.ondataavailable = e => { if (e.data.size) ch.push(e.data); };
+    const stopped = new Promise(ok => { r.onstop = ok; });
+    await primed; v.pause(); v.currentTime = 0;
+    await new Promise(ok => { v.onseeked = ok; setTimeout(ok, 1500); });
+    await ac.resume(); await v.play(); g.drawImage(v, 0, 0); r.start(1000);
+    const tStart = performance.now();
+    await new Promise(ok => {
+      (function draw() {
+        g.drawImage(v, 0, 0);
+        $('prog').value = Math.min(1, v.currentTime / end);
+        if (v.currentTime >= end || v.ended || performance.now() - tStart > (end + 5) * 1000) { v.pause(); if (r.state !== 'inactive') r.stop(); return ok(); }
+        requestAnimationFrame(draw);
+      })();
+    });
+    await Promise.race([stopped, new Promise(ok => setTimeout(ok, 4000))]);
+    if (!ch.length) throw new Error('vazio');
+    const type = r.mimeType || mime || file.type;
+    return new File(ch, file.name, { type });
+  } finally {
+    ac.close().catch(() => {}); URL.revokeObjectURL(v.src); v.remove();
+  }
+}
+
+$('camBtn').onclick = async () => {
+  const t = clean($('src').value);
+  if (!t.trim()) return $('src').focus();
+  if (!window.MediaRecorder) return alert('Este navegador não grava vídeo. Abra o link no Safari.');
+  $('text').textContent = t;
+  cam = true; part = 1; mirror(false);
+  keepAwake(); // ainda dentro do toque, senão o iPhone recusa
+  $('edit').hidden = true; $('read').hidden = false;
+  if (!(await camOpen())) { release(); cam = false; $('read').hidden = true; $('edit').hidden = false; return; }
+  recReady(0);
+};
+$('recGo').onclick = () => { $('recGo').hidden = $('recBack').hidden = $('recFrom').hidden = true; countdown(); };
+$('recFrom').onclick = () => { part = 1; recReady(0); };
+$('recStop').onclick = () => {
+  playing = false; stopCount();
+  $('recbar').hidden = true; $('recDot').hidden = true;
+  if (rec && rec.state !== 'inactive') rec.stop(); else recReady(startPos);
+};
+$('recBack').onclick = () => {
+  dropTake(); camClose(); release(); cam = false;
+  $('read').classList.remove('cam'); $('recbar').hidden = true; $('recDot').hidden = true;
+  $('done').hidden = true; $('read').hidden = true; $('edit').hidden = false;
+};
+// errou: apaga e volta para o mesmo ponto do texto, pronto para gravar
+$('redo').onclick = $('redo2').onclick = () => { dropTake(); recReady(startPos); };
+$('watch').onclick = () => { $('take').src = URL.createObjectURL(take); pane('review'); };
+$('saveAll').onclick = $('saveWhole').onclick = async () => {
+  $('take').pause(); out = take;
+  const ok = await share(out);
+  showReady(ok ? 'Vídeo salvo' : 'Ainda não salvou', false);
+  $('share').hidden = ok;
+};
+$('cutHere').onclick = async () => {
+  const v = $('take'), end = v.currentTime;
+  v.pause();
+  if (end < 1) return alert('Toque no play e pare o vídeo no ponto do erro.');
+  const resume = posAt(end);
+  pane('busy'); $('prog').value = 0;
+  try { out = await trim(take, end); }
+  catch (e) { out = take; alert('Não consegui cortar aqui. Vou salvar o vídeo inteiro; corte no Fotos em "Editar".'); }
+  startPos = resume; // a continuação começa deste ponto do texto
+  showReady('Vídeo pronto', true);
+};
+$('share').onclick = async () => { if (out && await share(out)) $('readyMsg').textContent = 'Vídeo salvo'; };
+$('next').onclick = async () => {
+  const at = startPos; dropTake(); part++;
+  if (await camOpen()) recReady(at); else $('recBack').onclick();
+};
+$('again').onclick = async () => {
+  dropTake(); part = 1;
+  if (await camOpen()) recReady(0); else $('recBack').onclick();
+};
+$('toText').onclick = () => $('recBack').onclick();
+
+// abre mesmo sem internet (depois da primeira vez)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+sc.onscroll = () => {
+  if (!playing || touching || Math.abs(sc.scrollTop - written) > 2) { pos = sc.scrollTop; userUntil = performance.now() + 250; }
+};
+sc.addEventListener('touchstart', () => { touching = true; }, { passive: true });
+sc.addEventListener('touchend', () => { touching = false; }, { passive: true });
+sc.addEventListener('touchcancel', () => { touching = false; }, { passive: true });
+$('resume').onclick = countdown;
+$('count').onclick = () => { stopCount(); pause(); if (cam && !rec) recReady(startPos); };
+$('restart').onclick = fromTop;
+$('back').onclick = () => { pause(); release(); $('read').hidden = true; $('edit').hidden = false; };
+$('fs').oninput = e => setFs(+e.target.value);
+$('sp').oninput = e => setSpeed(+e.target.value);
+$('wait').oninput = e => setWait(+e.target.value);
+$('split').onchange = $('mirror').onchange = save;
+document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => setFs(fs + +b.dataset.fs));
+document.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => setSpeed(speed + +b.dataset.sp));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !$('read').hidden) {
+    keepAwake();
+    if (cam && !rec) camOpen().then(() => $('cam').play().catch(() => {}));
+  }
+});
+load();
+</script>
+<script>
+const ROTEIROS = [{"t": "1. do beijo (35,9 mi)", "x": "É isso que acontece com a mulher que tem o hábito de abraçar o marido demorado todos os dias.\nE eu, como neuropsicóloga especialista em família, tenho o dever de te alertar.\nMuita gente acha que abraço é só carinho, mas quase ninguém sabe o que ele faz dentro do cérebro dos dois.\nA primeira coisa: libera ocitocina, o hormônio do vínculo.\nA segunda: o cortisol, o hormônio do estresse, cai.\nE a terceira: o corpo sai do modo alerta e para de inflamar.\nAgora, se nem o abraço tem acontecido na sua casa, o seu corpo já está cobrando.\nEu sou Alinne Duarte, e criei o Programa Desinflame. Oito semanas para transformar a sua jornada.\nToca em saiba mais."}, {"t": "2. da sardinha (7,8 mi)", "x": "Sabe o que acontece com o cérebro de uma mulher que tem o hábito simples de comer ovo todos os dias?\nO seu cérebro é feito, na maior parte, de gordura. E o ovo é uma das gorduras boas mais baratas que existem.\nMelhora o humor, aumenta a concentração e diminui aquela névoa mental.\nAí você pensa: como uma coisa tão barata faz tanto?\nMuitas vezes o remédio está na prateleira que você não imagina.\nMas não adianta comer ovo e continuar casada com o açúcar.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino esse divórcio, com um plano de sete dias.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "3. do marido que dorme primeiro (5,3 mi)", "x": "Sabe o que acontece quando o seu marido dorme em dois minutos e você fica olhando pro teto.\nNão é frescura. O cérebro da mulher processa mais emoção ao longo do dia.\nEle deita e desliga. Você deita e continua resolvendo a briga, a conta, o filho.\nA amígdala, o alarme do seu cérebro, segue ligada. E quem dorme mal acorda inflamada.\nFaz assim hoje: escreve num papel tudo o que foi ruim no seu dia, amassa e guarda numa caixa. Eu chamo de caixa preta da noite.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a desligar.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "4. da alimentação de pobre (4,6 mi)", "x": "Sabe qual é a alimentação de pobre para aquela mulher que acorda inchada e cansada.\nTem muita mulher pagando caro em pote de suplemento, e o que desinflama está na feira.\nO primeiro é o açafrão da terra. Uma pitada na comida já ajuda.\nO segundo é o alho, que qualquer um tem em casa.\nE o terceiro é o gengibre, num chá antes do almoço.\nBarato, acessível a qualquer pessoa.\nMas nada disso segura se o açúcar e a farinha branca continuam todo dia no seu prato.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te mostro o caminho inteiro.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "5. \"Proibidões da neurociência\"", "x": "Três hábitos que desinflamam o seu cérebro. E o terceiro vai te surpreender.\nO primeiro: sentar em silêncio dois minutos, de olhos fechados, com as palmas das mãos para cima. O cérebro entende que está seguro, e o cortisol começa a cair.\nO segundo: cada vez que vier um pensamento ruim, olha pra sua garrafa de água, fala \"não absorvo, devolvo\", e bebe.\nE o terceiro: terminar o banho morno com dez segundos de água fria.\nIsso não é pensamento positivo. É trilha neural nova.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame tem muito mais. Oito semanas para transformar a sua jornada.\nToca em saiba mais."}, {"t": "6. do Alzheimer aos 35 (3,3 mi)", "x": "Sabe qual é a coisa que a mulher precisa fazer aos 40 para não chegar aos 60 esquecida?\nTem muita mulher plantando hoje o esquecimento de amanhã, e não percebe.\nA primeira coisa é aprender a desacelerar. A mulher que não para vai pagar uma conta muito alta.\nA segunda é trocar o açúcar por gordura boa: ovo, abacate, azeite.\nE a terceira é dormir antes das onze, porque é dormindo que o cérebro faz a faxina.\nEu sou Alinne Duarte, neuropsicóloga, e aquilo que a sua alma silencia, o seu corpo grita.\nNo Programa Desinflame eu te ensino a cuidar disso hoje. Oito semanas para transformar a sua jornada.\nToca em saiba mais."}, {"t": "7. do adolescente que dorme depois das 23h (4,1 mi)", "x": "É isso que acontece no cérebro de uma mulher quando ela tem mania de dormir depois das 23 horas.\nMuita gente acha que é só costume, mas quase ninguém sabe o dano silencioso que isso causa.\nO sono não é só descanso. É a hora em que o cérebro faz uma faxina completa.\nQuando você dorme pouco, essa limpeza não acontece.\nE aí vem a cabeça pesada de manhã, a ansiedade no meio da tarde e a vontade de doce à noite.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a devolver o sono pro seu cérebro.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "8. \"O maior veneno\" (2,9 mi)", "x": "O maior veneno para o intestino de uma mulher não é o glúten, não é a lactose e muito menos o café.\nÉ engolir o que sente.\nTem muita mulher que segura o choro, segura a raiva, diz que está tudo bem.\nO cérebro entende isso como ameaça, o cortisol sobe, e o primeiro lugar que sente é a barriga: inchaço, intestino travado, gastrite.\nAquilo que a sua alma silencia, o seu corpo grita.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu cuido do seu corpo e das suas emoções ao mesmo tempo.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "9. do sol nas palmas das mãos", "x": "Sabe o que acontece com o cérebro de uma mulher que tem o hábito simples de tomar sol logo cedo?\nQuinze minutinhos de luz natural nos primeiros momentos do dia já mudam tudo.\nO seu cérebro entende que é dia, acorda de verdade e regula o humor.\nE à noite, ele produz a melatonina, o hormônio do sono, na hora certa.\nQuem não vê o sol de manhã não dorme direito à noite.\nRegular o sono não começa à noite. Começa ao acordar.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a rotina inteira.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "10. \"dizer sim quando quer dizer não\"", "x": "Sabe o que acontece no cérebro de uma mulher que diz sim pra todo mundo.\nMuita gente acha que é ser boazinha, mas quase ninguém sabe o preço disso.\nVocê pensa uma coisa e faz outra. O cérebro entende como conflito, e a amígdala, o alarme dele, dispara.\nO resultado é irritação, ansiedade e um peso no corpo que não vai embora.\nNinguém te ensinou que o não também é cuidado.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a dizer o primeiro não sem culpa.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}];
+(function(){const s=document.getElementById('rot'),t=document.getElementById('src');ROTEIROS.forEach((r,i)=>{const o=document.createElement('option');o.value=i;o.textContent=r.t;s.appendChild(o)});const put=()=>{t.value=ROTEIROS[s.value].x};s.onchange=put;put();})();
+</script>
+
