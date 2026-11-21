@@ -340,6 +340,7 @@ let marks = [], t0 = 0, part = 1, startPos = 0;
 // zoom = recorte do centro; a imagem sempre preenche a tela em pé (sem faixa preta)
 const view = $('view'), vg = view.getContext('2d'), ZS = [1, 1.25, 1.5, 2, 2.5, 3];
 let zl = 0, drawing = 0;
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 try { const r = localStorage.getItem('tp-zoom2'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
 function frame() {
   const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
@@ -366,7 +367,10 @@ async function camOpen() {
   camClose();
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1440 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } }, // em pé 3:4 = câmera inteira (o iPhone corta no formato pedido: 1920x1920 saía quadrado)
+      // iPhone lê largura/altura com o celular DEITADO e depois gira: pedir 1080x1920 cortava uma faixa estreita (zoom).
+      // Lá pedimos 1920x1080 (sai 1080x1920 em pé, câmera sem corte); nos outros, em pé direto.
+      video: IOS ? { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+                 : { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
   } catch (e) {
