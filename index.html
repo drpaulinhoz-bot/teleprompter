@@ -103,7 +103,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 
 /* modo stories: câmera da frente atrás, texto no alto perto da lente */
 #camBtn { height: 54px; font-size: 18px; flex-shrink: 0; border-radius: 14px; }
-#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+#cam { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; transform: scaleX(-1); }
+#zoom { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(158px + env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.4); border-radius: 26px; padding: 4px; color: #fff; }
+#zoom button { width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; }
+#zoom button:disabled { opacity: .3; }
+#zoom b { min-width: 7ch; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; }
 .cam::before { display: none; }
 .cam #stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .recording #stage { pointer-events: none; touch-action: none; }
@@ -164,7 +169,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 </main>
 
 <section id="read" hidden>
-  <video id="cam" muted playsinline autoplay hidden></video>
+  <video id="cam" muted playsinline autoplay></video>
+  <canvas id="view" width="1080" height="1920" hidden></canvas>
   <div id="stage">
     <div id="scroller"><p id="text"></p></div>
     <div id="guide"></div>
@@ -187,6 +193,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
     <button id="recGo">● GRAVAR</button>
     <button id="recStop" hidden>■ PARAR</button>
   </div>
+  <div id="zoom" hidden><button id="zOut" aria-label="Diminuir zoom">−</button><b id="zv">1x</b><button id="zIn" aria-label="Aumentar zoom">+</button></div>
   <div id="recDot" hidden>● Gravando</div>
 </section>
 
@@ -328,6 +335,26 @@ sc.onclick = () => { if (!counting && (!cam || rec)) playing ? pause() : start()
 // ===== modo stories: câmera da frente + gravação + decidir/assistir/cortar + salvar no Fotos =====
 let cam = false, stream = null, rec = null, chunks = [], take = null, out = null;
 let marks = [], t0 = 0, part = 1, startPos = 0;
+// o vídeo sai SEMPRE em pé (1080x1920): a imagem da câmera é desenhada aqui, venha deitada ou em pé.
+// zoom = recorte do centro; 0 = "Aberto" (imagem inteira, faixa preta onde sobrar)
+const view = $('view'), vg = view.getContext('2d'), ZS = [0, 1, 1.25, 1.5, 2, 2.5, 3];
+let zl = 1, drawing = 0;
+try { const r = localStorage.getItem('tp-zoom'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
+function frame() {
+  const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
+  if (vw) {
+    const z = ZS[zl], k = z ? Math.max(1080 / vw, 1920 / vh) * z : Math.min(1080 / vw, 1920 / vh);
+    vg.fillStyle = '#000'; vg.fillRect(0, 0, 1080, 1920);
+    vg.drawImage(v, (1080 - vw * k) / 2, (1920 - vh * k) / 2, vw * k, vh * k);
+  }
+  drawing = requestAnimationFrame(frame);
+}
+function zShow() {
+  $('zv').textContent = ZS[zl] ? ZS[zl] + 'x' : 'Aberto';
+  $('zOut').disabled = zl <= 0; $('zIn').disabled = zl >= ZS.length - 1;
+}
+$('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom', zl); } catch {} } };
+$('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); try { localStorage.setItem('tp-zoom', zl); } catch {} } };
 const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 const pane = id => ['ask', 'review', 'busy', 'ready'].forEach(k => { $(k).hidden = k !== id; });
 
@@ -338,19 +365,22 @@ async function camOpen() {
   camClose();
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } }, // maior imagem possível; o recorte em pé é feito no desenho
       audio: { echoCancellation: true, noiseSuppression: true }
     });
   } catch (e) {
     alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar.');
     return false;
   }
-  $('cam').srcObject = stream; $('cam').hidden = false;
+  $('cam').srcObject = stream; $('cam').play().catch(() => {});
+  view.hidden = false; zShow();
+  if (!drawing) frame();
   return true;
 }
 function camClose() {
   if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = null; $('cam').srcObject = null; $('cam').hidden = true;
+  stream = null; $('cam').srcObject = null; view.hidden = true;
+  cancelAnimationFrame(drawing); drawing = 0;
 }
 // texto parado no ponto certo, câmera ligada, esperando o "Gravar"
 function recReady(at = 0) {
@@ -358,11 +388,12 @@ function recReady(at = 0) {
   $('read').classList.add('cam'); $('read').classList.remove('recording'); $('bar').hidden = true;
   $('done').hidden = true; $('read').hidden = false;
   $('recbar').hidden = false; $('recGo').hidden = false; $('recBack').hidden = false;
-  $('recFrom').hidden = at <= 0; $('recStop').hidden = true; $('recDot').hidden = true;
+  $('recFrom').hidden = at <= 0; $('recStop').hidden = true; $('recDot').hidden = true; $('zoom').hidden = false;
 }
 function recStart() {
   chunks = []; marks = [[0, pos]]; t0 = performance.now();
-  rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const s = new MediaStream([...view.captureStream(30).getVideoTracks(), ...stream.getAudioTracks()]);
+  rec = new MediaRecorder(s, mime ? { mimeType: mime } : undefined);
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
   rec.onstop = recDone;
   rec.start(1000);
@@ -461,7 +492,7 @@ $('camBtn').onclick = async () => {
   if (!(await camOpen())) { release(); cam = false; $('read').hidden = true; $('edit').hidden = false; return; }
   recReady(0);
 };
-$('recGo').onclick = () => { $('recGo').hidden = $('recBack').hidden = $('recFrom').hidden = true; countdown(); };
+$('recGo').onclick = () => { $('zoom').hidden = true; $('recGo').hidden = $('recBack').hidden = $('recFrom').hidden = true; countdown(); };
 $('recFrom').onclick = () => { part = 1; recReady(0); };
 $('recStop').onclick = () => {
   playing = false; stopCount();
