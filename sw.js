@@ -1,5 +1,5 @@
 // guarda o app no celular: abre mesmo sem internet; com internet boa, pega a versão nova
-const C = 'teleprompter-v6';
+const C = 'teleprompter-v7';
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(C).then(c => Promise.all(

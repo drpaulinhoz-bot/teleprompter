@@ -337,25 +337,25 @@ sc.onclick = () => { if (!counting && (!cam || rec)) playing ? pause() : start()
 let cam = false, stream = null, rec = null, chunks = [], take = null, out = null;
 let marks = [], t0 = 0, part = 1, startPos = 0;
 // o vídeo sai SEMPRE em pé (1080x1920): a imagem da câmera é desenhada aqui, venha deitada ou em pé.
-// zoom = recorte do centro; 0 = "Aberto" (imagem inteira, faixa preta onde sobrar)
-const view = $('view'), vg = view.getContext('2d'), ZS = [0, 1, 1.25, 1.5, 2, 2.5, 3];
-let zl = 1, drawing = 0;
-try { const r = localStorage.getItem('tp-zoom'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
+// zoom = recorte do centro; a imagem sempre preenche a tela em pé (sem faixa preta)
+const view = $('view'), vg = view.getContext('2d'), ZS = [1, 1.25, 1.5, 2, 2.5, 3];
+let zl = 0, drawing = 0;
+try { const r = localStorage.getItem('tp-zoom2'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
 function frame() {
   const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
   if (vw) {
-    const z = ZS[zl], k = z ? Math.max(1080 / vw, 1920 / vh) * z : Math.min(1080 / vw, 1920 / vh);
+    const k = Math.max(1080 / vw, 1920 / vh) * ZS[zl];
     vg.fillStyle = '#000'; vg.fillRect(0, 0, 1080, 1920);
     vg.drawImage(v, (1080 - vw * k) / 2, (1920 - vh * k) / 2, vw * k, vh * k);
   }
   drawing = requestAnimationFrame(frame);
 }
 function zShow() {
-  $('zv').textContent = ZS[zl] ? ZS[zl] + 'x' : 'Aberto';
+  $('zv').textContent = ZS[zl] + 'x';
   $('zOut').disabled = zl <= 0; $('zIn').disabled = zl >= ZS.length - 1;
 }
-$('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom', zl); } catch {} } };
-$('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); try { localStorage.setItem('tp-zoom', zl); } catch {} } };
+$('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
+$('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
 const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 const pane = id => ['ask', 'review', 'busy', 'ready'].forEach(k => { $(k).hidden = k !== id; });
 
