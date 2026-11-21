@@ -109,6 +109,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 #zoom { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(158px + env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.4); border-radius: 26px; padding: 4px; color: #fff; }
 #zoom button { width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; }
 #zoom button:disabled { opacity: .3; }
+#zoom small { position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px; text-align: center; font-size: 11px; opacity: .6; }
 #zoom b { min-width: 7ch; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; }
 .cam::before { display: none; }
 .cam #stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -194,7 +195,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
     <button id="recGo">● GRAVAR</button>
     <button id="recStop" hidden>■ PARAR</button>
   </div>
-  <div id="zoom" hidden><button id="zOut" aria-label="Diminuir zoom">−</button><b id="zv">1x</b><button id="zIn" aria-label="Aumentar zoom">+</button></div>
+  <div id="zoom" hidden><button id="zOut" aria-label="Diminuir zoom">−</button><b id="zv">1x</b><small id="zdim"></small><button id="zIn" aria-label="Aumentar zoom">+</button></div>
   <div id="recDot" hidden>● Gravando</div>
 </section>
 
@@ -340,7 +341,6 @@ let marks = [], t0 = 0, part = 1, startPos = 0;
 // zoom = recorte do centro; a imagem sempre preenche a tela em pé (sem faixa preta)
 const view = $('view'), vg = view.getContext('2d'), ZS = [1, 1.25, 1.5, 2, 2.5, 3];
 let zl = 0, drawing = 0;
-const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 try { const r = localStorage.getItem('tp-zoom2'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
 function frame() {
   const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
@@ -353,6 +353,7 @@ function frame() {
 }
 function zShow() {
   $('zv').textContent = ZS[zl] + 'x';
+  const v = $('cam'); $('zdim').textContent = v.videoWidth ? v.videoWidth + '×' + v.videoHeight : '';
   $('zOut').disabled = zl <= 0; $('zIn').disabled = zl >= ZS.length - 1;
 }
 $('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
@@ -367,17 +368,18 @@ async function camOpen() {
   camClose();
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      // iPhone lê largura/altura com o celular DEITADO e depois gira: pedir 1080x1920 cortava uma faixa estreita (zoom).
-      // Lá pedimos 1920x1080 (sai 1080x1920 em pé, câmera sem corte); nos outros, em pé direto.
-      video: IOS ? { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
-                 : { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      // iPhone corta a imagem no formato pedido (1920x1920 saiu quadrado, 1920x1080 saiu faixa esticada):
+      // 1080x1920 em pé = formato da câmera em pé, sem corte extra
+      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
   } catch (e) {
     alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar.');
     return false;
   }
-  $('cam').srcObject = stream; $('cam').play().catch(() => {});
+  $('cam').srcObject = stream; $('cam').play().catch(() => {}); $('cam').onresize = $('cam').onloadedmetadata = zShow;
+  const t = stream.getVideoTracks()[0], zc = t.getCapabilities && t.getCapabilities().zoom;
+  if (zc) await t.applyConstraints({ advanced: [{ zoom: zc.min }] }).catch(() => {}); // lente o mais aberta possível
   view.hidden = false; zShow();
   if (!drawing) frame();
   return true;
@@ -394,13 +396,16 @@ function recReady(at = 0) {
   $('done').hidden = true; $('read').hidden = false;
   $('recbar').hidden = false; $('recGo').hidden = false; $('recBack').hidden = false;
   $('recFrom').hidden = at <= 0; $('recStop').hidden = true; $('recDot').hidden = true; $('zoom').hidden = false;
+  if (!drawing && stream) frame();
 }
 function recStart() {
   chunks = []; marks = [[0, pos]]; t0 = performance.now();
-  const s = new MediaStream([...view.captureStream(30).getVideoTracks(), ...stream.getAudioTracks()]);
-  rec = new MediaRecorder(s, mime ? { mimeType: mime } : undefined);
+  const vt = view.captureStream(30).getVideoTracks();
+  rec = new MediaRecorder(new MediaStream([...vt, ...stream.getAudioTracks()]), mime ? { mimeType: mime } : undefined);
+  rec.vt = vt; // desligadas ao parar, senão acumulam a cada tomada e o celular trava
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-  rec.onstop = recDone;
+  const r = rec;
+  r.onstop = r.onerror = () => { if (rec === r) recDone(); }; // erro do gravador (ligação, câmera caiu) também fecha
   rec.start(1000);
   $('read').classList.add('recording');
   $('recDot').hidden = false; $('recStop').hidden = false;
@@ -416,11 +421,18 @@ function fileName(ext) {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   return `stories-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-parte${part}.${ext}`;
 }
+// fecha a tomada UMA vez, venha do aviso do gravador ou da trava de segurança
 function recDone() {
-  const type = rec.mimeType || mime || 'video/mp4';
-  take = new File(chunks, fileName(type.includes('mp4') ? 'mp4' : 'webm'), { type });
-  rec = null; chunks = [];
-  $('read').classList.remove('recording');
+  const r = rec; if (!r) return;
+  rec = null; clearTimeout(r.guard);
+  try { if (r.state !== 'inactive') r.stop(); } catch {}
+  r.vt.forEach(t => t.stop());
+  cancelAnimationFrame(drawing); drawing = 0; // fora da câmera, não desenha
+  $('read').classList.remove('recording'); $('recDot').hidden = true; $('recbar').hidden = true;
+  const type = r.mimeType || mime || 'video/mp4';
+  take = chunks.length ? new File(chunks, fileName(type.includes('mp4') ? 'mp4' : 'webm'), { type }) : null;
+  chunks = [];
+  if (!take) { alert('Essa gravação não ficou salva. Grave de novo.'); return camOpen().then(ok => ok ? recReady(startPos) : $('recBack').onclick()); }
   if (!alive()) alert('A gravação foi interrompida; confira o vídeo.');
   $('read').hidden = true; $('done').hidden = false; pane('ask');
 }
@@ -502,7 +514,9 @@ $('recFrom').onclick = () => { part = 1; recReady(0); };
 $('recStop').onclick = () => {
   playing = false; stopCount();
   $('recbar').hidden = true; $('recDot').hidden = true;
-  if (rec && rec.state !== 'inactive') rec.stop(); else recReady(startPos);
+  if (!rec) return recReady(startPos);
+  try { rec.requestData(); rec.stop(); } catch { return recDone(); }
+  rec.guard = setTimeout(recDone, 2500); // iPhone às vezes não avisa que parou: segue sozinho
 };
 $('recBack').onclick = () => {
   dropTake(); camClose(); release(); cam = false;
@@ -514,8 +528,9 @@ $('redo').onclick = $('redo2').onclick = () => { dropTake(); recReady(startPos);
 $('watch').onclick = () => { $('take').src = URL.createObjectURL(take); pane('review'); };
 $('saveAll').onclick = $('saveWhole').onclick = async () => {
   $('take').pause(); out = take;
+  showReady('Salvando…', false); // botões de sair já visíveis, mesmo se o menu do iPhone travar
   const ok = await share(out);
-  showReady(ok ? 'Vídeo salvo' : 'Ainda não salvou', false);
+  $('readyMsg').textContent = ok ? 'Vídeo salvo' : 'Ainda não salvou';
   $('share').hidden = ok;
 };
 $('cutHere').onclick = async () => {
