@@ -217,6 +217,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
     <h2>Cortando o vídeo…</h2>
     <progress id="prog" max="1" value="0"></progress>
     <p>Pode levar um pouco. Não saia desta tela.</p>
+    <button id="busyQuit" class="ghost">Desistir e salvar o vídeo inteiro</button>
   </div>
   <div id="ready" class="pane" hidden>
     <h2 id="readyMsg">Vídeo pronto</h2>
@@ -321,7 +322,14 @@ function countdown() {
   cd = setInterval(() => { if (--n > 0) show(); else go(); }, 1000);
 }
 function stopCount() { clearInterval(cd); $('count').hidden = true; counting = false; }
-function go() { stopCount(); if (cam) recStart(); start(); }
+function go() {
+  stopCount();
+  if (cam) {
+    try { if (!alive()) throw 0; recStart(); }
+    catch (e) { rec = null; alert('Não consegui começar a gravar. Tente de novo.'); return camOpen().then(ok => ok ? recReady(startPos) : $('recBack').onclick()); }
+  }
+  start();
+}
 function fromTop() { pos = 0; sc.scrollTop = 0; countdown(); }
 
 $('play').onclick = () => {
@@ -341,15 +349,16 @@ let marks = [], t0 = 0, part = 1, startPos = 0;
 // zoom = recorte do centro; a imagem sempre preenche a tela em pé (sem faixa preta)
 const view = $('view'), vg = view.getContext('2d'), ZS = [1, 1.25, 1.5, 2, 2.5, 3];
 let zl = 0, drawing = 0;
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 try { const r = localStorage.getItem('tp-zoom2'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
 function frame() {
+  drawing = requestAnimationFrame(frame); // agenda antes: um erro no desenho não congela a imagem
   const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
   if (vw) {
     const k = Math.max(1080 / vw, 1920 / vh) * ZS[zl];
     vg.fillStyle = '#000'; vg.fillRect(0, 0, 1080, 1920);
-    vg.drawImage(v, (1080 - vw * k) / 2, (1920 - vh * k) / 2, vw * k, vh * k);
+    try { vg.drawImage(v, (1080 - vw * k) / 2, (1920 - vh * k) / 2, vw * k, vh * k); } catch {}
   }
-  drawing = requestAnimationFrame(frame);
 }
 function zShow() {
   $('zv').textContent = ZS[zl] + 'x';
@@ -359,27 +368,34 @@ function zShow() {
 $('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
 $('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
 const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+// promessa que nunca responde vira erro depois de ms (nada fica esperando para sempre)
+const limit = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('tempo')), ms))]);
 const pane = id => ['ask', 'review', 'busy', 'ready'].forEach(k => { $(k).hidden = k !== id; });
 
 const alive = () => stream && stream.getTracks().length &&
   stream.getTracks().every(t => t.readyState === 'live' && !t.muted);
-async function camOpen() {
+let opening = null;
+const camOpen = () => opening || (opening = camOpen1().finally(() => { opening = null; }));
+async function camOpen1() {
   if (alive()) return true; // câmera continua ligada entre uma tomada e outra
   camClose();
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      // iPhone corta a imagem no formato pedido (1920x1920 saiu quadrado, 1920x1080 saiu faixa esticada):
-      // 1080x1920 em pé = formato da câmera em pé, sem corte extra
-      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+    const ask = navigator.mediaDevices.getUserMedia({
+      // iPhone (código do WebKit) compara largura/altura com os formatos DEITADOS da câmera e só gira depois;
+      // pedir em pé (1080x1920) recortava uma faixa estreita = zoom. Pedindo 1920x1080 ele entrega 1080x1920 em pé, sem corte.
+      video: IOS ? { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+                 : { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
+    ask.catch(() => {});
+    stream = await limit(ask, 15000).catch(e => { ask.then(s => s.getTracks().forEach(t => t.stop())); throw e; });
   } catch (e) {
     alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar.');
     return false;
   }
   $('cam').srcObject = stream; $('cam').play().catch(() => {}); $('cam').onresize = $('cam').onloadedmetadata = zShow;
   const t = stream.getVideoTracks()[0], zc = t.getCapabilities && t.getCapabilities().zoom;
-  if (zc) await t.applyConstraints({ advanced: [{ zoom: zc.min }] }).catch(() => {}); // lente o mais aberta possível
+  if (zc) await limit(t.applyConstraints({ advanced: [{ zoom: zc.min }] }), 3000).catch(() => {}); // lente o mais aberta possível
   view.hidden = false; zShow();
   if (!drawing) frame();
   return true;
@@ -433,15 +449,21 @@ function recDone() {
   take = chunks.length ? new File(chunks, fileName(type.includes('mp4') ? 'mp4' : 'webm'), { type }) : null;
   chunks = [];
   if (!take) { alert('Essa gravação não ficou salva. Grave de novo.'); return camOpen().then(ok => ok ? recReady(startPos) : $('recBack').onclick()); }
-  if (!alive()) alert('A gravação foi interrompida; confira o vídeo.');
   $('read').hidden = true; $('done').hidden = false; pane('ask');
+  if (!alive()) setTimeout(() => alert('A gravação foi interrompida; confira o vídeo.'), 50);
 }
 function dropTake() {
   if ($('take').src) URL.revokeObjectURL($('take').src);
   $('take').removeAttribute('src'); $('take').load();
   take = out = null;
 }
+let sharing = false;
 async function share(file) {
+  if (sharing) return false;
+  sharing = true;
+  try { return await share1(file); } finally { sharing = false; }
+}
+async function share1(file) {
   // iPhone: abre o menu de compartilhar; "Salvar vídeo" manda direto para o Fotos
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return true; } catch (e) { return false; }
@@ -539,11 +561,15 @@ $('cutHere').onclick = async () => {
   if (end < 1) return alert('Toque no play e pare o vídeo no ponto do erro.');
   const resume = posAt(end);
   pane('busy'); $('prog').value = 0;
-  try { out = await trim(take, end); }
-  catch (e) { out = take; alert('Não consegui cortar aqui. Vou salvar o vídeo inteiro; corte no Fotos em "Editar".'); }
+  let cut = null;
+  try { cut = await limit(trim(take, end), end * 1000 + 20000); } catch (e) {}
+  if ($('busy').hidden) return; // já desistiu do corte
+  out = cut || take;
+  if (!cut) setTimeout(() => alert('Não consegui cortar aqui. Vou salvar o vídeo inteiro; corte no Fotos em "Editar".'), 50);
   startPos = resume; // a continuação começa deste ponto do texto
   showReady('Vídeo pronto', true);
 };
+$('busyQuit').onclick = () => { out = take; showReady('Vídeo inteiro (sem corte)', false); };
 $('share').onclick = async () => { if (out && await share(out)) $('readyMsg').textContent = 'Vídeo salvo'; };
 $('next').onclick = async () => {
   const at = startPos; dropTake(); part++;
@@ -574,6 +600,7 @@ $('split').onchange = $('mirror').onchange = save;
 document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => setFs(fs + +b.dataset.fs));
 document.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => setSpeed(speed + +b.dataset.sp));
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && rec) return $('recStop').onclick(); // salva o que já gravou
   if (document.visibilityState === 'visible' && !$('read').hidden) {
     keepAwake();
     if (cam && !rec) camOpen().then(() => $('cam').play().catch(() => {}));
