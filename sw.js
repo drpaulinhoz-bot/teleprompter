@@ -1,5 +1,5 @@
 // guarda o app no celular: abre mesmo sem internet; com internet boa, pega a versão nova
-const C = 'teleprompter-v10';
+const C = 'teleprompter-v11';
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(C).then(c => Promise.all(
@@ -12,7 +12,7 @@ self.addEventListener('activate', e => e.waitUntil(
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const net = fetch(e.request, { cache: 'no-cache' }).then(r => {
-    if (r.status === 200) { const c = r.clone(); e.waitUntil(caches.open(C).then(x => x.put(e.request, c))); }
+    if (r.status === 200) { const c = r.clone(); caches.open(C).then(x => x.put(e.request, c)).catch(() => {}); }
     return r;
   });
   const cached = () => caches.match(e.request, { ignoreSearch: true });
