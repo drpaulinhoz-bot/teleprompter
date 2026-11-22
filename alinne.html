@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -27,6 +27,7 @@
   color-scheme: dark;
 }
 html, body { height: 100%; margin: 0; }
+* { touch-action: manipulation; } /* toque duplo rápido não aproxima a tela */
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font); overflow: hidden; }
 button { font-family: var(--font); cursor: pointer; }
@@ -103,7 +104,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 
 /* modo stories: câmera da frente atrás, texto no alto perto da lente */
 #camBtn { height: 54px; font-size: 18px; flex-shrink: 0; border-radius: 14px; }
-#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+#cam { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; transform: scaleX(-1); }
+#zoom { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(158px + env(safe-area-inset-bottom, 0px)); z-index: 2; display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.4); border-radius: 26px; padding: 4px; color: #fff; }
+#zoom button { width: 44px; height: 44px; border-radius: 22px; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; }
+#zoom button:disabled { opacity: .3; }
+#zoom small { position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px; text-align: center; font-size: 11px; opacity: .6; }
+#zoom b { min-width: 7ch; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; }
 .cam::before { display: none; }
 .cam #stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .recording #stage { pointer-events: none; touch-action: none; }
@@ -140,12 +147,109 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 #done video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; border-radius: 12px; }
 #done button { height: 54px; border-radius: 14px; font-size: 18px; }
 #done p { margin: 0; color: var(--muted); font-size: 15px; text-align: center; }
+
+/* Capa: o título sobe como texto de teleprompter e para na seta-guia do terço superior */
+#capa { position: fixed; inset: 0; z-index: 99; background: #000; overflow: hidden;
+  animation: capaSai .55s 2.4s ease forwards; }
+@keyframes capaSai { to { opacity: 0; visibility: hidden; } }
+#capa .rolo { position: absolute; top: calc(33% - 52px); left: calc(62px + env(safe-area-inset-left, 0px)); right: 24px;
+  animation: capaSobe 1.6s cubic-bezier(.16,.8,.12,1) both; }
+@keyframes capaSobe { from { transform: translateY(75vh); } to { transform: none; } }
+#capa .b { display: block; height: 13px; border-radius: 7px; background: #fff; width: var(--w); }
+#capa .lidas { position: absolute; bottom: calc(100% + 26px); left: 0; right: 0; display: grid; gap: 20px; opacity: .14; }
+#capa .prox { display: grid; gap: 20px; margin-top: 34px; }
+#capa .prox .b:nth-child(1) { opacity: .5; } #capa .prox .b:nth-child(2) { opacity: .28; } #capa .prox .b:nth-child(3) { opacity: .12; }
+#capa .t1 { margin: 0 0 6px; font: 500 19px/1 -apple-system, "SF Pro Text", system-ui, sans-serif; color: var(--muted); letter-spacing: .01em; }
+#capa .t2 { margin: 0; font: 800 clamp(52px, 15vw, 88px)/.95 -apple-system, "SF Pro Display", system-ui, sans-serif; letter-spacing: -.035em; color: #fff; }
+#capa .seta { position: absolute; left: calc(22px + env(safe-area-inset-left, 0px)); top: calc(33% + 12px); width: 24px; height: 30px;
+  background: var(--accent); clip-path: polygon(0 0, 100% 50%, 0 100%);
+  animation: capaSeta .45s 1.25s cubic-bezier(.2,.9,.2,1.3) both; }
+@keyframes capaSeta { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+#capa .faixa { position: absolute; left: 0; right: 0; top: calc(33% - 22px); height: 104px;
+  background: linear-gradient(90deg, rgba(0,224,255,.10), rgba(0,224,255,0) 70%);
+  animation: capaFaixa .6s 1.3s ease both; }
+@keyframes capaFaixa { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #capa { animation-delay: 1s; }
+  #capa .rolo, #capa .seta, #capa .faixa { animation: none; }
+}
+
+/* ===== monitor de estúdio: ciano = sistema, vermelho = só gravação ===== */
+:root{
+  --ui:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",Arial,sans-serif;
+  --muted:#aab7ba; --line:#34484d; --panel:#0c1214; --tally:#e5243b;
+}
+h1,.field .row,.check,.step span,button,#recDot,#count,#done h2{font-family:var(--ui)}
+#text{font-family:"Helvetica Neue",Arial,sans-serif;font-weight:600;text-wrap:pretty}
+#edit{gap:10px}
+h1{font-size:28px;letter-spacing:.01em;text-transform:none;color:var(--fg);padding-bottom:8px;border-bottom:2px solid var(--fg)}
+textarea{border:0;border-radius:4px;font:500 20px/1.45 "Helvetica Neue",Arial,sans-serif}
+.field{display:block;border-top:1px solid var(--line);padding-top:6px}
+.field .row{font-size:17px;align-items:baseline;color:var(--muted)}
+.field output{font-size:28px;font-weight:700;color:var(--fg)}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;height:40px}
+input[type=range]::-webkit-slider-runnable-track{height:10px;
+  background:repeating-linear-gradient(90deg,var(--muted) 0 2px,transparent 2px 10%) top/100% 10px no-repeat,
+   linear-gradient(var(--muted),var(--muted)) bottom/100% 2px no-repeat}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:34px;margin-top:-12px;
+  border-radius:3px;background:var(--accent);border:2px solid #000;box-shadow:0 0 0 1px var(--accent)}
+.check{min-height:44px;border-top:1px solid var(--line);font-size:17px;color:var(--fg)}
+.check input{width:26px;height:26px}
+.primary{border-radius:6px;letter-spacing:.02em}
+#play{height:60px;font-size:22px}
+#camBtn{height:60px;font-size:20px;border-radius:6px;border:2px solid var(--tally);color:#fff;font-weight:700}
+#guide::before{border:0;width:5px;height:100%;background:var(--accent)}
+#guide{left:0}
+#count{color:#fff;font-weight:700}
+#count small{font-size:18px;color:var(--fg);margin-top:8px}
+#bar{background:#0b1012;border-top:2px solid var(--fg);gap:10px}
+.step{display:grid;grid-template-columns:44px 1fr 44px;gap:0;padding:6px;border-radius:6px;border:1px solid var(--line);align-items:center}
+.step span{grid-column:1/-1;font-size:15px;color:var(--muted);padding:0 0 2px 2px}
+.step b{font-size:26px}
+.step button{width:44px;height:44px;border-radius:4px;background:#26363a;font-size:26px}
+.actions button{height:54px;border-radius:6px;font-size:17px;font-weight:700}
+.ghost{border-color:#55696e}
+#recbar{padding-top:48px}
+#recbar button{border-radius:6px;border:1px solid rgba(255,255,255,.55);height:50px;font-size:18px}
+#recbar #recGo,#recbar #recStop{height:76px;border-radius:38px;font-size:24px;letter-spacing:.06em}
+#recbar #recGo{background:var(--tally);color:#fff;border:0}
+#recbar #recStop{background:#fff;color:var(--tally);border:0;box-shadow:inset 0 0 0 4px var(--tally)}
+#recDot{font-size:18px;padding:6px 16px;letter-spacing:.04em}
+#zoom{border-radius:6px}
+#zoom button{border-radius:4px}
+#zoom small{display:none}
+#done h2{text-align:left;font-size:40px;line-height:1.05;padding-top:14vh;border-bottom:2px solid #fff;padding-bottom:12px}
+#done button{border-radius:6px;height:58px;font-size:19px;font-weight:700}
+#done .primary{height:76px;font-size:23px}
+#done .ghost{border-color:#55696e;color:#fff}
+#ready #next{background:var(--tally);color:#fff}
+#done p{text-align:left;font-size:17px;color:#fff}
+#capa .t1,#capa .t2,#capa .ola,#capa .trava{font-family:var(--ui)}
+#capa .ola{margin:14px 0 0;font-size:22px;color:var(--accent);min-height:1em;animation:capaFaixa .6s 1.5s ease both}
+#capa .trava{display:none;margin:22px 0 0;font-size:19px;line-height:1.4;color:#fff;max-width:300px}
+#capa.fechado{animation:none}
+#capa.fechado .trava{display:block;animation:capaFaixa .6s 1.4s ease both}
+#capa.fechado .prox{display:none}
+#capa .t1{font-size:21px;letter-spacing:.02em}
+#capa .t2{letter-spacing:-.01em}
 </style>
 
-<main id="edit">
+<div id="capa" onclick="if(!this.classList.contains('fechado'))this.remove()">
+  <div class="faixa"></div>
+  <i class="seta"></i>
+  <div class="rolo">
+    <div class="lidas"><span class="b" style="--w:58%"></span><span class="b" style="--w:74%"></span><span class="b" style="--w:46%"></span></div>
+    <p class="t1">Teleprompter</p>
+    <p class="t2">Alinne</p>
+    <p class="ola" id="ola"></p>
+    <p class="trava">Este teleprompter é só para convidados.<br>Peça o seu link à equipe.</p>
+    <div class="prox"><span class="b" style="--w:82%"></span><span class="b" style="--w:64%"></span><span class="b" style="--w:38%"></span></div>
+  </div>
+</div>
+<main id="edit" hidden>
   <h1>Roteiros · Programa Desinflame</h1>
   <label class="field"><span class="row">Escolha o roteiro</span>
-  <select id="rot" aria-label="Escolha o roteiro" style="width:100%;font-size:17px;padding:12px;border-radius:12px;background:#111;color:#fff;border:1px solid #333"></select></label>
+  <select id="rot" aria-label="Escolha o roteiro" style="width:100%;font-size:17px;padding:12px;border-radius:4px;background:var(--panel);color:#fff;border:1px solid var(--line);font-family:var(--ui)"></select></label>
   <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Os enters do começo viram espaço em branco antes do texto.&#10;&#10;O texto não fica salvo."></textarea>
   <label class="field">
     <span class="row">Tamanho da letra <output id="fsv">44</output></span>
@@ -160,13 +264,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
     <input id="wait" type="range" min="0" max="60" step="5" value="20">
   </label>
   <label class="check"><input id="split" type="checkbox" checked> Uma frase por linha</label>
-  <label class="check"><input id="mirror" type="checkbox"> Espelhar texto (para o vidro)</label>
-  <button id="play" class="primary">▶ Play (projeção)</button>
-  <button id="camBtn" class="ghost">● Gravar stories (câmera da frente)</button>
+  <label class="check"><input id="mirror" type="checkbox"> Espelhar o texto (só para o vidro)</label>
+  <button id="play" class="primary">▶ Ler o texto na tela</button>
+  <button id="camBtn" class="ghost">● Gravar stories com a câmera</button>
 </main>
 
 <section id="read" hidden>
-  <video id="cam" muted playsinline autoplay hidden></video>
+  <video id="cam" muted playsinline autoplay></video>
+  <canvas id="view" width="1080" height="1920" hidden></canvas>
   <div id="stage">
     <div id="scroller"><p id="text"></p></div>
     <div id="guide"></div>
@@ -174,8 +279,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
   </div>
   <div id="bar" hidden>
     <div class="steppers">
-      <div class="step"><span>Letra</span><button data-fs="-4" aria-label="Diminuir letra">−</button><b id="fsv2">44</b><button data-fs="4" aria-label="Aumentar letra">+</button></div>
-      <div class="step"><span>Veloc.</span><button data-sp="-1" aria-label="Diminuir velocidade">−</button><b id="spv2">4</b><button data-sp="1" aria-label="Aumentar velocidade">+</button></div>
+      <div class="step"><span>Tamanho da letra</span><button data-fs="-4" aria-label="Diminuir letra">−</button><b id="fsv2">44</b><button data-fs="4" aria-label="Aumentar letra">+</button></div>
+      <div class="step"><span>Velocidade</span><button data-sp="-1" aria-label="Diminuir velocidade">−</button><b id="spv2">4</b><button data-sp="1" aria-label="Aumentar velocidade">+</button></div>
     </div>
     <div class="actions">
       <button id="back" class="ghost">Editar</button>
@@ -189,31 +294,33 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
     <button id="recGo">● GRAVAR</button>
     <button id="recStop" hidden>■ PARAR</button>
   </div>
+  <div id="zoom" hidden><button id="zOut" aria-label="Diminuir zoom">−</button><b id="zv">1x</b><small id="zdim"></small><button id="zIn" aria-label="Aumentar zoom">+</button></div>
   <div id="recDot" hidden>● Gravando</div>
 </section>
 
 <section id="done" hidden>
   <div id="ask" class="pane">
     <h2>Ficou bom?</h2>
-    <button id="redo" class="ghost">↺ Não, gravar de novo</button>
-    <button id="watch" class="ghost">▶ Assistir antes</button>
-    <button id="saveAll" class="primary">✓ Sim, salvar no Fotos</button>
+    <button id="redo" class="ghost">Não, gravar de novo</button>
+    <button id="watch" class="ghost">Assistir antes</button>
+    <button id="saveAll" class="primary">Sim, salvar no Fotos</button>
   </div>
   <div id="review" class="pane" hidden>
     <video id="take" controls playsinline></video>
     <p>Pause no ponto do erro e toque em Cortar.</p>
-    <button id="redo2" class="ghost">↺ Apagar e gravar de novo</button>
+    <button id="redo2" class="ghost">Apagar e gravar de novo</button>
     <button id="saveWhole" class="ghost">Salvar tudo, sem cortar</button>
-    <button id="cutHere" class="primary">✂ Cortar aqui e gravar o resto</button>
+    <button id="cutHere" class="primary">Cortar aqui e gravar o resto</button>
   </div>
   <div id="busy" class="pane" hidden>
     <h2>Cortando o vídeo…</h2>
     <progress id="prog" max="1" value="0"></progress>
     <p>Pode levar um pouco. Não saia desta tela.</p>
+    <button id="busyQuit" class="ghost">Desistir e salvar o vídeo inteiro</button>
   </div>
   <div id="ready" class="pane" hidden>
     <h2 id="readyMsg">Vídeo pronto</h2>
-    <button id="again" class="ghost">↺ Gravar tudo de novo</button>
+    <button id="again" class="ghost">Gravar tudo de novo</button>
     <button id="toText" class="ghost">Voltar ao texto</button>
     <button id="next" class="primary" hidden>● Gravar o resto</button>
     <button id="share" class="primary">Salvar no Fotos</button>
@@ -224,6 +331,32 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 
 <script>
 const $ = id => document.getElementById(id);
+// acesso só por convite: cada pessoa abre pelo SEU link (?c=...). Para tirar alguém, apague a linha dela.
+// ponytail: trava no próprio aparelho (site estático), barra quem não tem link, não um especialista determinado.
+const CONVITES = {"d06533807bb32962ca27d43591b72e5279ebfec692e1d5ff247dfdd5a52e33f8": ["Dr. Paulo", "paulo"], "62afe13a8a0cc8404ddec86a0f534fe4c8bbb64ead7b3c6bcc553e8ffa9110fa": ["Pr. Filipe", "filipe"], "9ca78c7a03cb54c05442325aee06197ca1f6273dca8bc5bd1bd60ed83f08cc0d": ["Dra. Alinne", "alinne"]};
+let liberado = false;
+const antigo = (() => { try { return localStorage.getItem('teleprompter-alinne') !== null || localStorage.getItem('tp-acesso') === 'antigo'; } catch { return false; } })();
+(async () => {
+  let c = new URLSearchParams(location.search).get('c'), quem = null;
+  try { if (!c) c = localStorage.getItem('tp-acesso'); } catch {}
+  if (c && c !== 'antigo' && window.crypto && crypto.subtle) {
+    const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(c.trim().toLowerCase())))]
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    quem = CONVITES[h];
+  }
+  if (quem) {
+    try { localStorage.setItem('tp-acesso', c.trim().toLowerCase()); } catch {}
+    // instalado na tela de início, o app abre já com o convite dessa pessoa
+    // versão da Alinne: o manifesto dela já abre com o convite
+    $('ola').textContent = 'Olá, ' + quem[0];
+  } else if (antigo) {
+    try { localStorage.setItem('tp-acesso', 'antigo'); } catch {} // aparelho que já usava antes da trava
+  } else {
+    $('capa').classList.add('fechado');
+    return;
+  }
+  liberado = true; $('edit').hidden = false; setTimeout(save);
+})();
 const sc = $('scroller');
 let fs = 44, speed = 4, pos = 0, playing = false, counting = false, last = 0, lock = null;
 let touching = false, userUntil = 0, written = 0, wait = 20, cd = 0;
@@ -231,7 +364,10 @@ let touching = false, userUntil = 0, written = 0, wait = 20, cd = 0;
 // limpa símbolos de formatação (*, #) e quebra uma frase por linha; enters do começo ficam
 function clean(t) {
   t = t.replace(/[*#_`>]+/g, '').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\s+$/, '');
-  if ($('split').checked) t = t.replace(/(?<!\b(?:Dr|Dra|Sr|Sra|Prof))([.!?…])[ \t]+/g, '$1\n');
+  if ($('split').checked) {
+    try { t = t.replace(new RegExp('(?<!\\b(?:Dr|Dra|Sr|Sra|Prof))([.!?…])[ \\t]+', 'g'), '$1\n'); }
+    catch { t = t.replace(/([.!?…])[ \t]+/g, '$1\n'); } // iPhone antigo
+  }
   return t;
 }
 
@@ -257,6 +393,7 @@ function setWait(v) {
 // lembra só os ajustes neste celular; o texto nunca é guardado
 const KEY = 'teleprompter-alinne';
 function save() {
+  if (!liberado) return;
   try { localStorage.setItem(KEY, JSON.stringify({ fs, speed, wait, split: $('split').checked, mirror: $('mirror').checked })); } catch {}
 }
 function load() {
@@ -294,7 +431,7 @@ function tick(t) {
   requestAnimationFrame(tick);
 }
 // espelha só enquanto passa (contagem + play); pausado volta ao normal
-const mirror = on => $('read').classList.toggle('mirror', on && $('mirror').checked);
+const mirror = on => $('read').classList.toggle('mirror', on && !cam && $('mirror').checked);
 function start() {
   playing = true; $('bar').hidden = true; mirror(true);
   last = performance.now();
@@ -305,6 +442,7 @@ function pause() { playing = false; $('bar').hidden = cam; mirror(false); }
 
 // espera ajustável antes de começar (tempo de dar a volta e ligar a câmera)
 function countdown() {
+  clearInterval(cd);
   counting = true; $('bar').hidden = true; mirror(true);
   let n = cam ? 3 : wait; // stories: celular na mão, 3 s bastam
   if (n <= 0) return go();
@@ -314,10 +452,18 @@ function countdown() {
   cd = setInterval(() => { if (--n > 0) show(); else go(); }, 1000);
 }
 function stopCount() { clearInterval(cd); $('count').hidden = true; counting = false; }
-function go() { stopCount(); if (cam) recStart(); start(); }
+function go() {
+  stopCount();
+  if (cam) {
+    try { if (!alive()) throw 0; recStart(); }
+    catch (e) { try { rec && rec.vt.forEach(t => t.stop()); } catch {} rec = null; alert('Não consegui começar a gravar. Tente de novo.'); return camOpen().then(ok => ok ? recReady(startPos) : $('recBack').onclick()); }
+  }
+  start();
+}
 function fromTop() { pos = 0; sc.scrollTop = 0; countdown(); }
 
 $('play').onclick = () => {
+  document.activeElement.blur(); scrollTo(0, 0);
   const t = clean($('src').value);
   if (!t.trim()) return $('src').focus();
   $('text').textContent = t;
@@ -330,29 +476,67 @@ sc.onclick = () => { if (!counting && (!cam || rec)) playing ? pause() : start()
 // ===== modo stories: câmera da frente + gravação + decidir/assistir/cortar + salvar no Fotos =====
 let cam = false, stream = null, rec = null, chunks = [], take = null, out = null;
 let marks = [], t0 = 0, part = 1, startPos = 0;
-const mime = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+// o vídeo sai SEMPRE em pé (1080x1920): a imagem da câmera é desenhada aqui, venha deitada ou em pé.
+// zoom = recorte do centro; a imagem sempre preenche a tela em pé (sem faixa preta)
+const view = $('view'), vg = view.getContext('2d'), ZS = [1, 1.25, 1.5, 2, 2.5, 3];
+let zl = 0, drawing = 0;
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+try { const r = localStorage.getItem('tp-zoom2'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
+function frame() {
+  drawing = requestAnimationFrame(frame); // agenda antes: um erro no desenho não congela a imagem
+  const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
+  if (vw) {
+    const k = Math.max(1080 / vw, 1920 / vh) * ZS[zl];
+    vg.fillStyle = '#000'; vg.fillRect(0, 0, 1080, 1920);
+    try { vg.drawImage(v, (1080 - vw * k) / 2, (1920 - vh * k) / 2, vw * k, vh * k); } catch {}
+  }
+}
+function zShow() {
+  $('zv').textContent = ZS[zl] + 'x';
+  const v = $('cam'); $('zdim').textContent = v.videoWidth ? v.videoWidth + '×' + v.videoHeight : '';
+  $('zOut').disabled = zl <= 0; $('zIn').disabled = zl >= ZS.length - 1;
+}
+$('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
+$('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
+const mime = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+// promessa que nunca responde vira erro depois de ms (nada fica esperando para sempre)
+const limit = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('tempo')), ms))]);
 const pane = id => ['ask', 'review', 'busy', 'ready'].forEach(k => { $(k).hidden = k !== id; });
 
 const alive = () => stream && stream.getTracks().length &&
   stream.getTracks().every(t => t.readyState === 'live' && !t.muted);
-async function camOpen() {
+let opening = null;
+const camOpen = () => opening || (opening = camOpen1().finally(() => { opening = null; }));
+async function camOpen1() {
   if (alive()) return true; // câmera continua ligada entre uma tomada e outra
   camClose();
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+    const ask = navigator.mediaDevices.getUserMedia({
+      // iPhone (código do WebKit) compara largura/altura com os formatos DEITADOS da câmera e só gira depois;
+      // pedir em pé (1080x1920) recortava uma faixa estreita = zoom. Pedindo 1920x1080 ele entrega 1080x1920 em pé, sem corte.
+      video: IOS ? { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+                 : { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
+    ask.catch(() => {});
+    stream = await limit(ask, 60000).catch(e => { ask.then(s => s.getTracks().forEach(t => t.stop())); throw e; });
   } catch (e) {
-    alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar.');
+    alert('Não consegui abrir a câmera. Toque em "Permitir" quando o celular perguntar. Se tocou em "Não permitir", feche o app e abra de novo.');
     return false;
   }
-  $('cam').srcObject = stream; $('cam').hidden = false;
+  const dead = () => { if (rec) $('recStop').onclick(); };
+  stream.getTracks().forEach(t => { t.onended = dead; t.onmute = () => setTimeout(() => { if (t.muted) dead(); }, 1500); });
+  $('cam').srcObject = stream; $('cam').play().catch(() => {}); $('cam').onresize = $('cam').onloadedmetadata = zShow;
+  const t = stream.getVideoTracks()[0], zc = t.getCapabilities && t.getCapabilities().zoom;
+  if (zc) await limit(t.applyConstraints({ advanced: [{ zoom: zc.min }] }), 3000).catch(() => {}); // lente o mais aberta possível
+  view.hidden = false; zShow();
+  if (!drawing) frame();
   return true;
 }
 function camClose() {
   if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = null; $('cam').srcObject = null; $('cam').hidden = true;
+  stream = null; $('cam').srcObject = null; view.hidden = true;
+  cancelAnimationFrame(drawing); drawing = 0;
 }
 // texto parado no ponto certo, câmera ligada, esperando o "Gravar"
 function recReady(at = 0) {
@@ -360,13 +544,18 @@ function recReady(at = 0) {
   $('read').classList.add('cam'); $('read').classList.remove('recording'); $('bar').hidden = true;
   $('done').hidden = true; $('read').hidden = false;
   $('recbar').hidden = false; $('recGo').hidden = false; $('recBack').hidden = false;
-  $('recFrom').hidden = at <= 0; $('recStop').hidden = true; $('recDot').hidden = true;
+  $('recFrom').hidden = at <= 0; $('recStop').hidden = true; $('recDot').hidden = true; $('zoom').hidden = false;
+  if (!drawing && stream) frame();
 }
 function recStart() {
   chunks = []; marks = [[0, pos]]; t0 = performance.now();
-  rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const vt = view.captureStream(30).getVideoTracks();
+  try { rec = new MediaRecorder(new MediaStream([...vt, ...stream.getAudioTracks()]), { ...(mime && { mimeType: mime }), videoBitsPerSecond: 6e6, audioBitsPerSecond: 128e3 }); }
+  catch (e) { vt.forEach(t => t.stop()); throw e; }
+  rec.vt = vt; // desligadas ao parar, senão acumulam a cada tomada e o celular trava
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-  rec.onstop = recDone;
+  const r = rec;
+  r.onstop = r.onerror = () => { if (rec === r) recDone(); }; // erro do gravador (ligação, câmera caiu) também fecha
   rec.start(1000);
   $('read').classList.add('recording');
   $('recDot').hidden = false; $('recStop').hidden = false;
@@ -382,23 +571,37 @@ function fileName(ext) {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   return `stories-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-parte${part}.${ext}`;
 }
+// fecha a tomada UMA vez, venha do aviso do gravador ou da trava de segurança
 function recDone() {
-  const type = rec.mimeType || mime || 'video/mp4';
-  take = new File(chunks, fileName(type.includes('mp4') ? 'mp4' : 'webm'), { type });
-  rec = null; chunks = [];
-  $('read').classList.remove('recording');
-  if (!alive()) alert('A gravação foi interrompida; confira o vídeo.');
+  const r = rec; if (!r) return;
+  rec = null; clearTimeout(r.guard);
+  try { if (r.state !== 'inactive') r.stop(); } catch {}
+  r.vt.forEach(t => t.stop());
+  const caiu = !alive();
+  camClose(); // revisão sem câmera ligada: poupa bateria e o vídeo toca no alto-falante
+  $('read').classList.remove('recording'); $('recDot').hidden = true; $('recbar').hidden = true;
+  const type = (r.mimeType || mime || 'video/mp4').split(';')[0];
+  take = chunks.length ? new File(chunks, fileName(type.includes('mp4') ? 'mp4' : 'webm'), { type }) : null;
+  chunks = [];
+  if (!take) { alert('Essa gravação não ficou salva. Grave de novo.'); return camOpen().then(ok => ok ? recReady(startPos) : $('recBack').onclick()); }
   $('read').hidden = true; $('done').hidden = false; pane('ask');
+  if (caiu) setTimeout(() => alert('A gravação foi interrompida; confira o vídeo.'), 50);
 }
 function dropTake() {
   if ($('take').src) URL.revokeObjectURL($('take').src);
   $('take').removeAttribute('src'); $('take').load();
   take = out = null;
 }
+let sharing = false;
 async function share(file) {
+  if (sharing) return false;
+  sharing = true; const solta = setTimeout(() => { sharing = false; }, 90000);
+  try { return await share1(file); } finally { clearTimeout(solta); sharing = false; }
+}
+async function share1(file) {
   // iPhone: abre o menu de compartilhar; "Salvar vídeo" manda direto para o Fotos
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file] }); return true; } catch (e) { return false; }
+    try { await navigator.share({ files: [file] }); return true; } catch (e) { return e && e.name === 'AbortError' ? null : false; }
   }
   if (/iPhone|iPad|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) { alert('Não abriu o menu. Toque em "Salvar no Fotos" de novo.'); return false; }
   const a = document.createElement('a'); // computador / Android sem menu: baixa o arquivo
@@ -406,13 +609,17 @@ async function share(file) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   return true;
 }
+let saved = false;
 function showReady(msg, cont) {
+  saved = false;
   $('share').hidden = false;
   $('readyMsg').textContent = msg; $('next').hidden = !cont; pane('ready');
 }
 
 // corta do começo até "end" segundos: toca o vídeo escondido e regrava (leva o tempo do trecho)
+let trimStop = false;
 async function trim(file, end) {
+  trimStop = false;
   const ac = new (window.AudioContext || window.webkitAudioContext)(); // criado no toque, exigência do iPhone
   const v = document.createElement('video');
   v.playsInline = true; v.src = URL.createObjectURL(file);
@@ -420,6 +627,7 @@ async function trim(file, end) {
   document.body.appendChild(v);
   ac.resume();
   const primed = v.play().catch(() => {}); // libera o som enquanto ainda é o toque
+  let s;
   try {
     await new Promise((ok, bad) => { v.onloadedmetadata = ok; v.onerror = bad; });
     const c = document.createElement('canvas');
@@ -427,7 +635,7 @@ async function trim(file, end) {
     const g = c.getContext('2d');
     const dst = ac.createMediaStreamDestination();
     ac.createMediaElementSource(v).connect(dst);
-    const s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dst.stream.getAudioTracks()]);
+    s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dst.stream.getAudioTracks()]);
     const r = new MediaRecorder(s, mime ? { mimeType: mime } : undefined), ch = [];
     r.ondataavailable = e => { if (e.data.size) ch.push(e.data); };
     const stopped = new Promise(ok => { r.onstop = ok; });
@@ -439,36 +647,45 @@ async function trim(file, end) {
       (function draw() {
         g.drawImage(v, 0, 0);
         $('prog').value = Math.min(1, v.currentTime / end);
-        if (v.currentTime >= end || v.ended || performance.now() - tStart > (end + 5) * 1000) { v.pause(); if (r.state !== 'inactive') r.stop(); return ok(); }
+        if (trimStop || v.currentTime >= end || v.ended || performance.now() - tStart > (end + 5) * 1000) { v.pause(); if (r.state !== 'inactive') r.stop(); return ok(); }
         requestAnimationFrame(draw);
       })();
     });
     await Promise.race([stopped, new Promise(ok => setTimeout(ok, 4000))]);
+    if (!v.ended && v.currentTime < end - 0.5) throw new Error('incompleto');
     if (!ch.length) throw new Error('vazio');
-    const type = r.mimeType || mime || file.type;
+    const type = (r.mimeType || mime || file.type).split(';')[0];
     return new File(ch, file.name, { type });
   } finally {
+    if (s) s.getTracks().forEach(t => t.stop());
     ac.close().catch(() => {}); URL.revokeObjectURL(v.src); v.remove();
   }
 }
 
 $('camBtn').onclick = async () => {
+  document.activeElement.blur(); scrollTo(0, 0);
   const t = clean($('src').value);
   if (!t.trim()) return $('src').focus();
   if (!window.MediaRecorder) return alert('Este navegador não grava vídeo. Abra o link no Safari.');
   $('text').textContent = t;
   cam = true; part = 1; mirror(false);
   keepAwake(); // ainda dentro do toque, senão o iPhone recusa
-  $('edit').hidden = true; $('read').hidden = false;
+  $('edit').hidden = true; $('read').hidden = false; $('bar').hidden = true; $('read').classList.add('cam');
+  $('recbar').hidden = false; $('recBack').hidden = false; $('zoom').hidden = true;
+  $('recGo').hidden = $('recStop').hidden = $('recFrom').hidden = true;
   if (!(await camOpen())) { release(); cam = false; $('read').hidden = true; $('edit').hidden = false; return; }
+  if (!cam) return camClose(); // tocou em Voltar enquanto abria
   recReady(0);
 };
-$('recGo').onclick = () => { $('recGo').hidden = $('recBack').hidden = $('recFrom').hidden = true; countdown(); };
+$('recGo').onclick = () => { $('zoom').hidden = true; $('recGo').hidden = $('recBack').hidden = $('recFrom').hidden = true; countdown(); };
 $('recFrom').onclick = () => { part = 1; recReady(0); };
 $('recStop').onclick = () => {
   playing = false; stopCount();
   $('recbar').hidden = true; $('recDot').hidden = true;
-  if (rec && rec.state !== 'inactive') rec.stop(); else recReady(startPos);
+  if (!rec) return recReady(startPos);
+  if (rec.guard || rec.state !== 'recording') return; // já está parando: espera o fim
+  try { rec.requestData(); rec.stop(); } catch { return recDone(); }
+  rec.guard = setTimeout(recDone, 2500); // iPhone às vezes não avisa que parou: segue sozinho
 };
 $('recBack').onclick = () => {
   dropTake(); camClose(); release(); cam = false;
@@ -476,13 +693,15 @@ $('recBack').onclick = () => {
   $('done').hidden = true; $('read').hidden = true; $('edit').hidden = false;
 };
 // errou: apaga e volta para o mesmo ponto do texto, pronto para gravar
-$('redo').onclick = $('redo2').onclick = () => { dropTake(); recReady(startPos); };
+$('redo').onclick = $('redo2').onclick = async () => { dropTake(); if (await camOpen()) recReady(startPos); else $('recBack').onclick(); };
 $('watch').onclick = () => { $('take').src = URL.createObjectURL(take); pane('review'); };
 $('saveAll').onclick = $('saveWhole').onclick = async () => {
   $('take').pause(); out = take;
+  showReady('Salvando…', false); // botões de sair já visíveis, mesmo se o menu do iPhone travar
   const ok = await share(out);
-  showReady(ok ? 'Vídeo salvo' : 'Ainda não salvou', false);
-  $('share').hidden = ok;
+  if (ok) saved = true;
+  $('readyMsg').textContent = ok ? 'Vídeo salvo' : ok === null ? 'Vídeo pronto' : 'Ainda não salvou';
+  $('share').hidden = !!ok;
 };
 $('cutHere').onclick = async () => {
   const v = $('take'), end = v.currentTime;
@@ -490,24 +709,37 @@ $('cutHere').onclick = async () => {
   if (end < 1) return alert('Toque no play e pare o vídeo no ponto do erro.');
   const resume = posAt(end);
   pane('busy'); $('prog').value = 0;
-  try { out = await trim(take, end); }
-  catch (e) { out = take; alert('Não consegui cortar aqui. Vou salvar o vídeo inteiro; corte no Fotos em "Editar".'); }
+  let cut = null;
+  try { cut = await limit(trim(take, end), end * 1000 + 20000); } catch (e) { trimStop = true; }
+  if ($('busy').hidden) return; // já desistiu do corte
+  out = cut || take;
+  if (!cut) setTimeout(() => alert('Não consegui cortar aqui. Vou salvar o vídeo inteiro; corte no Fotos em "Editar".'), 50);
   startPos = resume; // a continuação começa deste ponto do texto
   showReady('Vídeo pronto', true);
 };
-$('share').onclick = async () => { if (out && await share(out)) $('readyMsg').textContent = 'Vídeo salvo'; };
+$('busyQuit').onclick = () => { trimStop = true; out = take; showReady('Vídeo inteiro (sem corte)', false); };
+$('share').onclick = async () => { if (out && await share(out)) { saved = true; $('readyMsg').textContent = 'Vídeo salvo'; $('share').hidden = true; } };
+const semSalvar = () => saved || !out || confirm('Este vídeo ainda não foi salvo no Fotos. Continuar mesmo assim?');
 $('next').onclick = async () => {
+  if (!semSalvar()) return;
   const at = startPos; dropTake(); part++;
   if (await camOpen()) recReady(at); else $('recBack').onclick();
 };
 $('again').onclick = async () => {
+  if (!semSalvar()) return;
   dropTake(); part = 1;
   if (await camOpen()) recReady(0); else $('recBack').onclick();
 };
-$('toText').onclick = () => $('recBack').onclick();
+$('toText').onclick = () => { if (semSalvar()) $('recBack').onclick(); };
 
 // abre mesmo sem internet (depois da primeira vez)
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const tinha = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (tinha && !$('edit').hidden && !cam) location.reload(); });
+}
 sc.onscroll = () => {
   if (!playing || touching || Math.abs(sc.scrollTop - written) > 2) { pos = sc.scrollTop; userUntil = performance.now() + 250; }
 };
@@ -525,10 +757,17 @@ $('split').onchange = $('mirror').onchange = save;
 document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => setFs(fs + +b.dataset.fs));
 document.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => setSpeed(speed + +b.dataset.sp));
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && cam && counting) return $('count').onclick();
+  if (document.visibilityState === 'visible') setTimeout(() => { sharing = false; }, 1000); // menu de salvar preso não trava os próximos
+  if (document.visibilityState === 'hidden' && rec) return $('recStop').onclick(); // salva o que já gravou
   if (document.visibilityState === 'visible' && !$('read').hidden) {
     keepAwake();
-    if (cam && !rec) camOpen().then(() => $('cam').play().catch(() => {}));
+    if (cam && !rec && !$('recbar').hidden) camOpen().then(() => $('cam').play().catch(() => {}));
   }
+});
+$('src').addEventListener('blur', () => scrollTo(0, 0));
+if (window.visualViewport) visualViewport.addEventListener('resize', () => {
+  $('edit').style.height = visualViewport.height + 'px'; scrollTo(0, 0);
 });
 load();
 </script>
@@ -536,4 +775,3 @@ load();
 const ROTEIROS = [{"t": "1. do beijo (35,9 mi)", "x": "É isso que acontece com a mulher que tem o hábito de abraçar o marido demorado todos os dias.\nE eu, como neuropsicóloga especialista em família, tenho o dever de te alertar.\nMuita gente acha que abraço é só carinho, mas quase ninguém sabe o que ele faz dentro do cérebro dos dois.\nA primeira coisa: libera ocitocina, o hormônio do vínculo.\nA segunda: o cortisol, o hormônio do estresse, cai.\nE a terceira: o corpo sai do modo alerta e para de inflamar.\nAgora, se nem o abraço tem acontecido na sua casa, o seu corpo já está cobrando.\nEu sou Alinne Duarte, e criei o Programa Desinflame. Oito semanas para transformar a sua jornada.\nToca em saiba mais."}, {"t": "2. da sardinha (7,8 mi)", "x": "Sabe o que acontece com o cérebro de uma mulher que tem o hábito simples de comer ovo todos os dias?\nO seu cérebro é feito, na maior parte, de gordura. E o ovo é uma das gorduras boas mais baratas que existem.\nMelhora o humor, aumenta a concentração e diminui aquela névoa mental.\nAí você pensa: como uma coisa tão barata faz tanto?\nMuitas vezes o remédio está na prateleira que você não imagina.\nMas não adianta comer ovo e continuar casada com o açúcar.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino esse divórcio, com um plano de sete dias.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "3. do marido que dorme primeiro (5,3 mi)", "x": "Sabe o que acontece quando o seu marido dorme em dois minutos e você fica olhando pro teto.\nNão é frescura. O cérebro da mulher processa mais emoção ao longo do dia.\nEle deita e desliga. Você deita e continua resolvendo a briga, a conta, o filho.\nA amígdala, o alarme do seu cérebro, segue ligada. E quem dorme mal acorda inflamada.\nFaz assim hoje: escreve num papel tudo o que foi ruim no seu dia, amassa e guarda numa caixa. Eu chamo de caixa preta da noite.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a desligar.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "4. da alimentação de pobre (4,6 mi)", "x": "Sabe qual é a alimentação de pobre para aquela mulher que acorda inchada e cansada.\nTem muita mulher pagando caro em pote de suplemento, e o que desinflama está na feira.\nO primeiro é o açafrão da terra. Uma pitada na comida já ajuda.\nO segundo é o alho, que qualquer um tem em casa.\nE o terceiro é o gengibre, num chá antes do almoço.\nBarato, acessível a qualquer pessoa.\nMas nada disso segura se o açúcar e a farinha branca continuam todo dia no seu prato.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te mostro o caminho inteiro.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "5. \"Proibidões da neurociência\"", "x": "Três hábitos que desinflamam o seu cérebro. E o terceiro vai te surpreender.\nO primeiro: sentar em silêncio dois minutos, de olhos fechados, com as palmas das mãos para cima. O cérebro entende que está seguro, e o cortisol começa a cair.\nO segundo: cada vez que vier um pensamento ruim, olha pra sua garrafa de água, fala \"não absorvo, devolvo\", e bebe.\nE o terceiro: terminar o banho morno com dez segundos de água fria.\nIsso não é pensamento positivo. É trilha neural nova.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame tem muito mais. Oito semanas para transformar a sua jornada.\nToca em saiba mais."}, {"t": "6. do Alzheimer aos 35 (3,3 mi)", "x": "Sabe qual é a coisa que a mulher precisa fazer aos 40 para não chegar aos 60 esquecida?\nTem muita mulher plantando hoje o esquecimento de amanhã, e não percebe.\nA primeira coisa é aprender a desacelerar. A mulher que não para vai pagar uma conta muito alta.\nA segunda é trocar o açúcar por gordura boa: ovo, abacate, azeite.\nE a terceira é dormir antes das onze, porque é dormindo que o cérebro faz a faxina.\nEu sou Alinne Duarte, neuropsicóloga, e aquilo que a sua alma silencia, o seu corpo grita.\nNo Programa Desinflame eu te ensino a cuidar disso hoje. Oito semanas para transformar a sua jornada.\nToca em saiba mais."}, {"t": "7. do adolescente que dorme depois das 23h (4,1 mi)", "x": "É isso que acontece no cérebro de uma mulher quando ela tem mania de dormir depois das 23 horas.\nMuita gente acha que é só costume, mas quase ninguém sabe o dano silencioso que isso causa.\nO sono não é só descanso. É a hora em que o cérebro faz uma faxina completa.\nQuando você dorme pouco, essa limpeza não acontece.\nE aí vem a cabeça pesada de manhã, a ansiedade no meio da tarde e a vontade de doce à noite.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a devolver o sono pro seu cérebro.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "8. \"O maior veneno\" (2,9 mi)", "x": "O maior veneno para o intestino de uma mulher não é o glúten, não é a lactose e muito menos o café.\nÉ engolir o que sente.\nTem muita mulher que segura o choro, segura a raiva, diz que está tudo bem.\nO cérebro entende isso como ameaça, o cortisol sobe, e o primeiro lugar que sente é a barriga: inchaço, intestino travado, gastrite.\nAquilo que a sua alma silencia, o seu corpo grita.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu cuido do seu corpo e das suas emoções ao mesmo tempo.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "9. do sol nas palmas das mãos", "x": "Sabe o que acontece com o cérebro de uma mulher que tem o hábito simples de tomar sol logo cedo?\nQuinze minutinhos de luz natural nos primeiros momentos do dia já mudam tudo.\nO seu cérebro entende que é dia, acorda de verdade e regula o humor.\nE à noite, ele produz a melatonina, o hormônio do sono, na hora certa.\nQuem não vê o sol de manhã não dorme direito à noite.\nRegular o sono não começa à noite. Começa ao acordar.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a rotina inteira.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}, {"t": "10. \"dizer sim quando quer dizer não\"", "x": "Sabe o que acontece no cérebro de uma mulher que diz sim pra todo mundo.\nMuita gente acha que é ser boazinha, mas quase ninguém sabe o preço disso.\nVocê pensa uma coisa e faz outra. O cérebro entende como conflito, e a amígdala, o alarme dele, dispara.\nO resultado é irritação, ansiedade e um peso no corpo que não vai embora.\nNinguém te ensinou que o não também é cuidado.\nEu sou Alinne Duarte, neuropsicóloga, e no Programa Desinflame eu te ensino a dizer o primeiro não sem culpa.\nOito semanas para transformar a sua jornada. Toca em saiba mais."}];
 (function(){const s=document.getElementById('rot'),t=document.getElementById('src');ROTEIROS.forEach((r,i)=>{const o=document.createElement('option');o.value=i;o.textContent=r.t;s.appendChild(o)});const put=()=>{t.value=ROTEIROS[s.value].x};s.onchange=put;put();})();
 </script>
-
