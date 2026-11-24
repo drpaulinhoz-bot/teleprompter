@@ -198,6 +198,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .primary{border-radius:6px;letter-spacing:.02em}
 #play{height:60px;font-size:22px}
 #camBtn{height:60px;font-size:20px;border-radius:6px;border:2px solid var(--tally);color:#fff;font-weight:700}
+/* digitando: a caixa ocupa a tela toda, controles voltam no ✓ */
+#edit:has(#src:focus)>:not(#src){display:none}
+#edit:has(#src:focus) #src{font-size:22px}
 #guide::before{border:0;width:5px;height:100%;background:var(--accent)}
 #guide{left:0}
 #count{color:#fff;font-weight:700}
