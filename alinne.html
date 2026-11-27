@@ -482,14 +482,19 @@ let marks = [], t0 = 0, part = 1, startPos = 0;
 // o vídeo sai SEMPRE em pé (1080x1920): a imagem da câmera é desenhada aqui, venha deitada ou em pé.
 // zoom = recorte do centro; a imagem sempre preenche a tela em pé (sem faixa preta)
 const view = $('view'), vg = view.getContext('2d'), ZS = [1, 1.25, 1.5, 2, 2.5, 3];
-let zl = 0, drawing = 0;
+let zl = 0, drawing = 0, nz = null, nf = 0; // nz = zoom da própria lente (iPhone); nf = quadros desenhados
+// 27/11/2026 (vídeo do Pr. Filipe): gravar o DESENHO (canvas) no iPhone faz a imagem andar mais rápido que a voz
+// (o iPhone desenha ~25 quadros/s e o gravador carimba como 30: 142 s de som, 121 s de imagem, boca fora do som).
+// Por isso, com a câmera em pé, grava-se a CÂMERA direto (relógio da própria câmera) e o zoom é o da lente.
+const zoomApply = () => { if (nz && stream) { const t = stream.getVideoTracks()[0]; t && t.applyConstraints({ advanced: [{ zoom: Math.min(nz.max, nz.min * ZS[zl]) }] }).catch(() => {}); } };
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 try { const r = localStorage.getItem('tp-zoom2'), v = +r; if (r !== null && v >= 0 && v < ZS.length) zl = v; } catch {}
 function frame() {
   drawing = requestAnimationFrame(frame); // agenda antes: um erro no desenho não congela a imagem
   const v = $('cam'), vw = v.videoWidth, vh = v.videoHeight;
   if (vw) {
-    const k = Math.max(1080 / vw, 1920 / vh) * ZS[zl];
+    nf++;
+    const k = Math.max(1080 / vw, 1920 / vh) * (nz ? 1 : ZS[zl]);
     vg.fillStyle = '#000'; vg.fillRect(0, 0, 1080, 1920);
     try { vg.drawImage(v, (1080 - vw * k) / 2, (1920 - vh * k) / 2, vw * k, vh * k); } catch {}
   }
@@ -499,8 +504,8 @@ function zShow() {
   const v = $('cam'); $('zdim').textContent = v.videoWidth ? v.videoWidth + '×' + v.videoHeight : '';
   $('zOut').disabled = zl <= 0; $('zIn').disabled = zl >= ZS.length - 1;
 }
-$('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
-$('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
+$('zOut').onclick = () => { if (zl > 0) { zl--; zShow(); zoomApply(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
+$('zIn').onclick = () => { if (zl < ZS.length - 1) { zl++; zShow(); zoomApply(); try { localStorage.setItem('tp-zoom2', zl); } catch {} } };
 const mime = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 // promessa que nunca responde vira erro depois de ms (nada fica esperando para sempre)
 const limit = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('tempo')), ms))]);
@@ -531,7 +536,8 @@ async function camOpen1() {
   stream.getTracks().forEach(t => { t.onended = dead; t.onmute = () => setTimeout(() => { if (t.muted) dead(); }, 1500); });
   $('cam').srcObject = stream; $('cam').play().catch(() => {}); $('cam').onresize = $('cam').onloadedmetadata = zShow;
   const t = stream.getVideoTracks()[0], zc = t.getCapabilities && t.getCapabilities().zoom;
-  if (zc) await limit(t.applyConstraints({ advanced: [{ zoom: zc.min }] }), 3000).catch(() => {}); // lente o mais aberta possível
+  nz = zc && zc.max > zc.min ? zc : null;
+  if (zc) await limit(t.applyConstraints({ advanced: [{ zoom: nz ? Math.min(nz.max, nz.min * ZS[zl]) : zc.min }] }), 3000).catch(() => {}); // lente aberta (ou no zoom escolhido)
   view.hidden = false; zShow();
   if (!drawing) frame();
   return true;
@@ -552,10 +558,12 @@ function recReady(at = 0) {
 }
 function recStart() {
   chunks = []; marks = [[0, pos]]; t0 = performance.now();
-  const vt = view.captureStream(30).getVideoTracks();
+  const v = $('cam'), direto = v.videoHeight > v.videoWidth && (nz || zl === 0); // câmera em pé: grava ela mesma
+  const vt = direto ? stream.getVideoTracks() : view.captureStream(30).getVideoTracks();
   try { rec = new MediaRecorder(new MediaStream([...vt, ...stream.getAudioTracks()]), { ...(mime && { mimeType: mime }), videoBitsPerSecond: 6e6, audioBitsPerSecond: 128e3 }); }
-  catch (e) { vt.forEach(t => t.stop()); throw e; }
-  rec.vt = vt; // desligadas ao parar, senão acumulam a cada tomada e o celular trava
+  catch (e) { if (!direto) vt.forEach(t => t.stop()); throw e; }
+  rec.vt = direto ? [] : vt; // as do desenho são desligadas ao parar, senão acumulam e o celular trava
+  rec.direto = direto; nf = 0;
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
   const r = rec;
   r.onstop = r.onerror = () => { if (rec === r) recDone(); }; // erro do gravador (ligação, câmera caiu) também fecha
@@ -580,7 +588,8 @@ function recDone() {
   rec = null; clearTimeout(r.guard);
   try { if (r.state !== 'inactive') r.stop(); } catch {}
   r.vt.forEach(t => t.stop());
-  const caiu = !alive();
+  const caiu = !alive(), seg = (performance.now() - t0) / 1000;
+  const lento = !r.direto && seg > 5 && nf / seg < 27; // pelo desenho e o celular não deu conta: som e boca podem descolar
   camClose(); // revisão sem câmera ligada: poupa bateria e o vídeo toca no alto-falante
   $('read').classList.remove('recording'); $('recDot').hidden = true; $('recbar').hidden = true;
   const type = (r.mimeType || mime || 'video/mp4').split(';')[0];
@@ -589,6 +598,7 @@ function recDone() {
   if (!take) { alert('Essa gravação não ficou salva. Grave de novo.'); return camOpen().then(ok => ok ? recReady(startPos) : $('recBack').onclick()); }
   $('read').hidden = true; $('done').hidden = false; pane('ask');
   if (caiu) setTimeout(() => alert('A gravação foi interrompida; confira o vídeo.'), 50);
+  else if (lento) setTimeout(() => alert('O celular ficou lento nesta gravação e a boca pode sair fora do som. Volte o zoom para 1x e grave de novo.'), 50);
 }
 function dropTake() {
   if ($('take').src) URL.revokeObjectURL($('take').src);
@@ -638,17 +648,17 @@ async function trim(file, end) {
     const g = c.getContext('2d');
     const dst = ac.createMediaStreamDestination();
     ac.createMediaElementSource(v).connect(dst);
-    s = new MediaStream([...c.captureStream(30).getVideoTracks(), ...dst.stream.getAudioTracks()]);
+    s = new MediaStream([...c.captureStream(24).getVideoTracks(), ...dst.stream.getAudioTracks()]); // 24: ritmo que o iPhone aguenta
     const r = new MediaRecorder(s, mime ? { mimeType: mime } : undefined), ch = [];
     r.ondataavailable = e => { if (e.data.size) ch.push(e.data); };
     const stopped = new Promise(ok => { r.onstop = ok; });
     await primed; v.pause(); v.currentTime = 0;
     await new Promise(ok => { v.onseeked = ok; setTimeout(ok, 1500); });
     await ac.resume(); await v.play(); g.drawImage(v, 0, 0); r.start(1000);
-    const tStart = performance.now();
+    const tStart = performance.now(); let n = 0, last = -1;
     await new Promise(ok => {
       (function draw() {
-        g.drawImage(v, 0, 0);
+        g.drawImage(v, 0, 0); if (v.currentTime !== last) { n++; last = v.currentTime; }
         $('prog').value = Math.min(1, v.currentTime / end);
         if (trimStop || v.currentTime >= end || v.ended || performance.now() - tStart > (end + 5) * 1000) { v.pause(); if (r.state !== 'inactive') r.stop(); return ok(); }
         requestAnimationFrame(draw);
@@ -657,6 +667,8 @@ async function trim(file, end) {
     await Promise.race([stopped, new Promise(ok => setTimeout(ok, 4000))]);
     if (!v.ended && v.currentTime < end - 0.5) throw new Error('incompleto');
     if (!ch.length) throw new Error('vazio');
+    const seg = (performance.now() - tStart) / 1000;
+    if (seg > 3 && n / seg < 22) throw new Error('lento'); // corte sairia com a boca fora do som: entrega o vídeo inteiro
     const type = (r.mimeType || mime || file.type).split(';')[0];
     return new File(ch, file.name, { type });
   } finally {
