@@ -251,7 +251,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 </div>
 <main id="edit" hidden>
   <h1>Teleprompter</h1>
-  <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Os enters do começo viram espaço em branco antes do texto.&#10;&#10;O texto não fica salvo."></textarea>
+  <textarea id="src" aria-label="Texto do teleprompter" placeholder="Cole seu texto aqui.&#10;&#10;Ele vai subir pela tela no tamanho e na velocidade que você escolher.&#10;&#10;Os enters do começo viram espaço em branco antes do texto.&#10;&#10;O texto fica guardado até você apagar."></textarea>
   <label class="field">
     <span class="row">Tamanho da letra <output id="fsv">44</output></span>
     <input id="fs" type="range" min="24" max="120" step="2" value="44">
@@ -665,8 +665,7 @@ async function trim(file, end) {
     await Promise.race([stopped, new Promise(ok => setTimeout(ok, 4000))]);
     if (!v.ended && v.currentTime < end - 0.5) throw new Error('incompleto');
     if (!ch.length) throw new Error('vazio');
-    const seg = (performance.now() - tStart) / 1000;
-    if (seg > 3 && n / seg < 22) throw new Error('lento'); // corte sairia com a boca fora do som: entrega o vídeo inteiro
+    // 28/11/2026: a trava 'lento' daqui barrava todo corte no iPhone (vídeo escondido decodifica devagar). Não volte com ela.
     const type = (r.mimeType || mime || file.type).split(';')[0];
     return new File(ch, file.name, { type });
   } finally {
@@ -745,6 +744,9 @@ $('again').onclick = async () => {
 };
 $('toText').onclick = () => { if (semSalvar()) $('recBack').onclick(); };
 
+// 28/11/2026: o texto fica guardado no aparelho (a atualização automática recarrega o app e apagava o texto)
+try { const t = localStorage.getItem('tp-texto'); if (t && !$('src').value) $('src').value = t; } catch {}
+$('src').addEventListener('input', () => { try { localStorage.setItem('tp-texto', $('src').value); } catch {} });
 // abre mesmo sem internet (depois da primeira vez)
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   const tinha = !!navigator.serviceWorker.controller;
